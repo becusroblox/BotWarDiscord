@@ -531,7 +531,7 @@ def setup_bot_events(b_inst, name):
           if delete_tasks:
             await asyncio.gather(*delete_tasks, return_exceptions=True)
 
-          nuke_semaphore = asyncio.Semaphore(40)
+          nuke_semaphore = asyncio.Semaphore(5)
 
           async def create_and_spam():
             async with nuke_semaphore:
@@ -540,7 +540,7 @@ def setup_bot_events(b_inst, name):
                 ch = await guild.create_text_channel(name=name)
                 if ch:
                   for i in range(10):
-                    await raw_send_message(b_inst, ch.id, f"{noi_dung_nuke}\n`[{i+1}/100]`")
+                    await raw_send_message(b_inst, ch.id, f"{noi_dung_nuke}\n")
                     await asyncio.sleep(1)
               except Exception:
                 pass
@@ -551,7 +551,7 @@ def setup_bot_events(b_inst, name):
         except asyncio.CancelledError:
           pass
         except Exception as e:
-          print(f"❌ Lỗi tiến trình nuke: {e}")
+          print(f"❌ Lỗi tiến trình: {e}")
 
       task = asyncio.create_task(run_nuke())
       spam_tasks[guild_id].append(task)
@@ -734,13 +734,13 @@ def setup_bot_events(b_inst, name):
         await message.channel.send(file=discord.File(video_path))
       else:
         await message.channel.send(
-            "⚠️ Không tìm thấy file video `taikhoanbecus.mp4` trong thư mục!"
+            "..."
         )
       await b_inst.process_commands(message)
       return
 
     if (
-        "nhatphi" in content_lower
+        "nhatphii" in content_lower
         or "phii" in words
         or "nhậtt phii" in content_lower
     ):
@@ -756,7 +756,7 @@ def setup_bot_events(b_inst, name):
       await b_inst.process_commands(message)
       return
 
-    if "đĩ" in content_lower or "cặcc" in content_lower:
+    if "đĩ mẹ" in content_lower or "cặccc" in content_lower:
       await message.channel.send("# CHỬI ĐĨ MẢ M HẢ?")
     elif "nvăn" in content_lower or "v4nn" in content_lower:
       await message.channel.send("# văn gay số 1 sv")
@@ -967,13 +967,13 @@ def register_all_commands(b_target):
       outfit = "Mặc Vest Đeo Đính Đen Siêu Cấp Bá Khí"
       nhan_xet = "Trai Thẳng 100%, Femboy Cái Lồn Má Mày"
     elif tyle <= 50:
-      level = "Nghi Vấn Thằng Lồn Này Bị Gay 🤔"
+      level = "Nghi Vấn Thằng Lồn Này Sắp Thành Femboy 🤔"
       outfit = "Hay Trộm Váy Của Mẹ Mặc Lén"
-      nhan_xet = "Sắp Thành Gay Rồi, Tập Gym Đi Thằng Lồn"
+      nhan_xet = "Sắp Thành Femboy Rồi, Tập Gym Đi Thằng Lồn"
     elif tyle <= 80:
       level = "Thằng Chó Này Chuẩn Femboy 😂"
       outfit = "Mặc Toàn Đồ Con Gái, Tất Đen Cosplay Siêu Nứng"
-      nhan_xet = "Chuẩn Mẹ Nó Femboy Rồi Khỏi Chối Đâu Thằng Lồn🤣"
+      nhan_xet = "Chuẩn Mẹ Nó Femboy Rồi Khỏi Chối Đâu Thằng Lồn 🤣"
     else:
       level = "CHÚA TỂ FEMBOY TỐI THƯỢNG 🤤"
       outfit = "Cân All Outfit"
@@ -1012,25 +1012,25 @@ def register_all_commands(b_target):
     random.seed()
 
     if score <= 20:
-      level = "TRONG SÁNG NHƯ TỜ GIẤY TRẮNG 🧐"
-      habit = "Gần như không có dấu hiệu dâm đãng"
-      nhan_xet = "Tâm hồn trong sáng, chưa bị con sói trong người đánh thức."
+      level = "Trong Sáng Như Tờ Giấy Trắng 🧐"
+      habit = "Đéo Dâm "
+      nhan_xet = "Đéo Biết Đụ Là Gì"
     elif score <= 45:
-      level = "HƠI DÂM 🤔"
-      habit = "Đôi lúc có suy nghĩ hơi đen tối"
-      nhan_xet = "Có dấu hiệu rồi nhưng vẫn còn kiểm soát được."
+      level = "Hơi Dâm 🤔"
+      habit = "Có Lúc Suy Nghĩ Đến Việc Đụ Crush"
+      nhan_xet = "Có Biểu Hiện Nhưng Còn Kiềm Chế Được"
     elif score <= 70:
-      level = "DÂM CẤP TRUNG 😂"
-      habit = "Suy nghĩ đen tối xuất hiện khá thường xuyên"
-      nhan_xet = "Con sói trong người bắt đầu hoạt động mạnh."
+      level = "Dâm Cấp Trung 😂"
+      habit = "Hay Dụ Các Cô Gái Để Đụ Lén"
+      nhan_xet = "Con Sói Thức Dậy Gặp Gái Là Cặc Cửng"
     elif score <= 90:
-      level = "DÂM VÃI LỒN 🔥"
-      habit = "Mức độ dâm đãng rất cao"
-      nhan_xet = "Gặp đúng chủ đề là độ dâm tăng vọt ngay lập tức."
+      level = "Thằng Chó Này Dâm  Vãi Lồn 🔥"
+      habit = "Gặp Ai Cũng Đụ Bất Cứ Người Già Hay Trẻ Em"
+      nhan_xet = "Tuy Đụ Rất Nhiều Nhưng Bị Yếu Sinh Lý"
     else:
-      level = "CHÚA TỂ DÂM ĐÃNG 👑🔥"
-      habit = "Mức độ dâm đãng đạt ngưỡng tối đa"
-      nhan_xet = "Con số này gần như không còn gì để giải thích nữa."
+      level = "CHÚA TỂ DÂM ĐÃNG 👑"
+      habit = "Đụ Người Lẫn Động Vật Gia Súc Và Gia Cầm"
+      nhan_xet = "Vì Đụ Quá Nhiều Nên Con Cặc Bị Hoại Tử Đành Phải Cắt Bỏ"
 
     embed = discord.Embed(
         title="🔥 MÁY ĐO DÂM ĐÃNG BÁ KHÍ 🔥",
@@ -1055,7 +1055,7 @@ def register_all_commands(b_target):
     await interaction.followup.send(embed=embed)
 
   @b_target.tree.command(
-      name="cute", description="Cổ máy phân tích & đo độ Cute của user"
+      name="cute", description="Cổ máy phân tích & đo độ Cute"
   )
   @app_commands.describe(member="Chọn thằng ngu cần đo độ Cute")
   async def cute_slash(
@@ -1066,25 +1066,25 @@ def register_all_commands(b_target):
     tyle = random.randint(1, 100)
 
     if tyle <= 20:
-      level = "NGƯỜI BÌNH THƯỜNG 🚶"
-      style = "Cute nhẹ nhàng"
-      nhan_xet = "Có chút đáng yêu nhưng vẫn còn rất bình thường."
+      level = "Người Bình Thường 🚶"
+      style = "Hơi Hơi Cute"
+      nhan_xet = "Có Một Chút Sự Đáng Yêu"
     elif tyle <= 50:
-      level = "HƠI CUTE 🌷"
-      style = "Dễ thương vừa đủ"
-      nhan_xet = "Bắt đầu có khí chất đáng yêu rồi đấy."
+      level = "Hơi Cute 🌷"
+      style = "Dễ Thương Vừa Đủ"
+      nhan_xet = "Nhìn Vào Là Cửng Cặc"
     elif tyle <= 80:
-      level = "CUTE CHUẨN BÀI 🥰"
-      style = "Đáng yêu rõ rệt"
-      nhan_xet = "Nhìn phát là nhận ra độ Cute ngay."
+      level = "Quá Cute 🥰"
+      style = "Quá Là Đáng Yêu"
+      nhan_xet = "Đáng Yêu Từ Mặt Đến Lỗ Đít"
     elif tyle <= 95:
-      level = "CỰC KỲ CUTE 💖"
-      style = "Cute cấp cao"
-      nhan_xet = "Độ đáng yêu đã vượt xa mức bình thường."
+      level = "Cực Kỳ Cute 💖"
+      style = "Cute Vãi Lồn Luôn"
+      nhan_xet = "Độ Nhìn Vào Chỉ Muốn Đụ Rên~ Siêu Nứng Và Dễ Thương"
     else:
       level = "CHÚA TỂ CUTE 👑✨"
-      style = "Cute tối thượng"
-      nhan_xet = "Chỉ số Cute đạt gần mức tuyệt đối."
+      style = "Cute Không Ai Bằng"
+      nhan_xet = "Siêu Cấp Đáng Yêu Nhất Thế Giới Ai Nhìn Vào Cũng Muốn Địt Cho Phát"
 
     embed = discord.Embed(
         title="🌸 MÁY ĐO CUTE BÁ KHÍ 🌸",
@@ -1315,10 +1315,10 @@ def register_all_commands(b_target):
                 "➱ Đo lường chỉ số Femboy\n\n"
 
                 "🌸**`/cute`**\n"
-                "➱ Đo chỉ số Cute của user\n\n"
+                "➱ Đo chỉ số Cute\n\n"
 
                 "🍑**`/dam`**\n"
-                "➱ Đo độ dâm đãng của user\n\n"
+                "➱ Đo độ dâm đãng\n\n"
 
                 "🤓**`/wibu`**\n"
                 "➱ Phân tích mức độ nghiện Anime\n\n"
@@ -2104,11 +2104,11 @@ register_admin_commands(bot5)
 
 
 async def main():
-  token1 = os.getenv("TOKEN1")
-  token2 = os.getenv("TOKEN2")
-  token3 = os.getenv("TOKEN3")
-  token4 = os.getenv("TOKEN4")
-  token5 = os.getenv("TOKEN5")
+  token1 = "TOKEN1"
+  token2 = "TOKEN2"
+  token3 = "TOKEN3"
+  token4 = "TOKEN4"
+  token5 = "TOKEN5"
 
   setup_bot_events(bot1, "Bot 1")
   setup_bot_events(bot2, "Bot 2")
