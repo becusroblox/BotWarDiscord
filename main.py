@@ -5,7 +5,6 @@ import math
 import os
 import random
 import re
-from io import BytesIO
 import discord
 from discord import ButtonStyle, app_commands
 from discord.ext import commands, tasks
@@ -17,27 +16,6 @@ if os.path.exists(TERMUX_HOME_DIR):
 
 ACCESS_FILE = "access_control.json"
 USERS_TRACK_FILE = "used_users.json"
-
-
-def load_access_control():
-  if not os.path.exists(ACCESS_FILE):
-    data = {"whitelist": [], "blacklist": []}
-    with open(ACCESS_FILE, "w", encoding="utf-8") as f:
-      json.dump(data, f, indent=4)
-    return data
-  try:
-    with open(ACCESS_FILE, "r", encoding="utf-8") as f:
-      return json.load(f)
-  except Exception:
-    return {"whitelist": [], "blacklist": []}
-
-
-def save_access_control(data):
-  try:
-    with open(ACCESS_FILE, "w", encoding="utf-8") as f:
-      json.dump(data, f, indent=4)
-  except Exception as e:
-    print(f"Lỗi lưu access_control: {e}")
 
 
 def track_user_usage(user_id):
@@ -83,12 +61,6 @@ def check_admin(member):
   return False
 
 
-def check_blacklist(user_id):
-  data = load_access_control()
-  blacklist = data.get("blacklist", [])
-  return user_id in blacklist or str(user_id) in [str(x) for x in blacklist]
-
-
 
 # ---------------------------------------------------------------------------
 # Lightweight RAM caches
@@ -108,29 +80,27 @@ def _ensure_access_cache():
   if _access_cache is not None:
     return _access_cache
 
-  default_data = {"whitelist": [], "blacklist": []}
+  default_data = {"blacklist": []}
   try:
     if os.path.exists(ACCESS_FILE):
       with open(ACCESS_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-      if not isinstance(data, dict):
-        data = default_data
+        raw_data = json.load(f)
+      if isinstance(raw_data, dict):
+        blacklist = raw_data.get("blacklist", [])
+      else:
+        blacklist = []
     else:
-      data = default_data
+      blacklist = []
   except (OSError, json.JSONDecodeError):
-    data = default_data
+    blacklist = []
 
-  data.setdefault("whitelist", [])
-  data.setdefault("blacklist", [])
-  if not isinstance(data["whitelist"], list):
-    data["whitelist"] = []
-  if not isinstance(data["blacklist"], list):
-    data["blacklist"] = []
+  if not isinstance(blacklist, list):
+    blacklist = []
 
-  _access_cache = data
+  _access_cache = {"blacklist": blacklist}
 
-  if not os.path.exists(ACCESS_FILE):
-    save_access_control(_access_cache)
+  # Rewrite old files so only blacklist data is kept.
+  save_access_control(_access_cache)
   return _access_cache
 
 
@@ -429,33 +399,20 @@ def setup_bot_events(b_inst, name):
   @b_inst.event
   async def on_interaction(interaction: discord.Interaction):
     if interaction.type == discord.InteractionType.application_command:
-      track_user_usage(interaction.user.id)
       if check_blacklist(interaction.user.id):
-        try:
-          if not interaction.response.is_done():
-            await interaction.response.send_message(
-                f"❌ {interaction.user.mention} Mày đang nằm trong danh sách **Blacklist** nên đéo thể sử dụng bot!",
-                ephemeral=True,
-            )
-        except Exception:
-          pass
         return
+      track_user_usage(interaction.user.id)
 
   @b_inst.event
   async def on_message(message: discord.Message):
     if message.author.bot:
       return
 
+    if check_blacklist(message.author.id):
+      return
+
     track_user_usage(message.author.id)
     content_lower = message.content.lower()
-
-    if content_lower.startswith("b!"):
-      if check_blacklist(message.author.id):
-        await message.channel.send(
-            f"❌ {message.author.mention} Bạn đang nằm trong danh sách **Blacklist** nên không thể sử dụng bot!"
-        )
-        return
-
     words = content_lower.split()
 
     if content_lower.startswith("b!nuke"):
@@ -727,55 +684,7 @@ def setup_bot_events(b_inst, name):
         )
       return
 
-    # --- 5. CÁC TRIGGER / PHẢN HỒI TIN NHẮN KHÁC ---
-    if "tai khoan becus" in content_lower or "tài khoản becus" in content_lower:
-      video_path = "taikhoanbecus.mp4"
-      if os.path.exists(video_path):
-        await message.channel.send(file=discord.File(video_path))
-      else:
-        await message.channel.send(
-            "..."
-        )
-      await b_inst.process_commands(message)
-      return
-
-    if (
-        "nhatphii" in content_lower
-        or "phii" in words
-        or "nhậtt phii" in content_lower
-    ):
-      await message.channel.send("# NHẬT PHI ĐZ NHẤT VN 😎")
-      await b_inst.process_commands(message)
-      return
-
-    if b_inst.user in message.mentions:
-      try:
-        await message.add_reaction("💀")
-      except Exception:
-        pass
-      await b_inst.process_commands(message)
-      return
-
-    if "đĩ mẹ" in content_lower or "cặccc" in content_lower:
-      await message.channel.send("# CHỬI ĐĨ MẢ M HẢ?")
-    elif "nvăn" in content_lower or "v4nn" in content_lower:
-      await message.channel.send("# văn gay số 1 sv")
-    elif "bé cu" in content_lower:
-      await message.channel.send("# CU CHA M À THG LỒN?")
-    elif "mai anh iu" in content_lower:
-      icons = [
-          "😘", "🥰", "😍", "🤩", "😋", "🤤", "🤯", "🥵", "🤬", "🙄",
-          "😎", "😳", "😓", "😰", "😱", "😜", "🤪", "😔", "🤔", "🥺",
-      ]
-      for icon in icons:
-        try:
-          await message.add_reaction(icon)
-          await asyncio.sleep(0.2)
-        except Exception:
-          pass
-    elif "becuss" in content_lower:
-      await message.channel.send("# BECUS BÁ KHÍ MXH")
-
+    # No automatic responses to ordinary chat messages.
     await b_inst.process_commands(message)
 
 
@@ -1045,13 +954,8 @@ def register_all_commands(b_target):
     embed.add_field(
         name="💬 Phân Tích:", value=f"> *{nhan_xet}*", inline=False
     )
-    embed.add_field(
-        name="📊 Chỉ Số:",
-        value=f"`{score}/100` điểm dâm đãng",
-        inline=False,
-    )
     embed.set_thumbnail(url=target.display_avatar.url)
-    embed.set_footer(text=f"Kiểm tra bởi {interaction.user.name} • Dâm v1.0")
+    embed.set_footer(text=f"Kiểm tra bởi {interaction.user.name} • EPR")
     await interaction.followup.send(embed=embed)
 
   @b_target.tree.command(
@@ -1080,11 +984,11 @@ def register_all_commands(b_target):
     elif tyle <= 95:
       level = "Cực Kỳ Cute 💖"
       style = "Cute Vãi Lồn Luôn"
-      nhan_xet = "Độ Nhìn Vào Chỉ Muốn Đụ Rên~ Siêu Nứng Và Dễ Thương"
+      nhan_xet = "Nhìn Vào Chỉ Muốn Đụ Rên~ Siêu Nứng Và Dễ Thương"
     else:
       level = "CHÚA TỂ CUTE 👑✨"
       style = "Cute Không Ai Bằng"
-      nhan_xet = "Siêu Cấp Đáng Yêu Nhất Thế Giới Ai Nhìn Vào Cũng Muốn Địt Cho Phát"
+      nhan_xet = "Siêu Cấp Đáng Yêu Nhất Thế Giới Ai Nhìn Vào Là Muốn Địt Cho Phát"
 
     embed = discord.Embed(
         title="🌸 MÁY ĐO CUTE BÁ KHÍ 🌸",
@@ -1099,11 +1003,8 @@ def register_all_commands(b_target):
     embed.add_field(
         name="💬 Nhận Xét:", value=f"> *{nhan_xet}*", inline=False
     )
-    embed.add_field(
-        name="📊 Chỉ Số:", value=f"`{tyle}/100` điểm Cute", inline=False
-    )
     embed.set_thumbnail(url=target.display_avatar.url)
-    embed.set_footer(text=f"Kiểm tra bởi {interaction.user.name} • Cute v1.0")
+    embed.set_footer(text=f"Kiểm tra bởi {interaction.user.name} • EPR")
     await interaction.followup.send(embed=embed)
   @b_target.tree.command(
       name="chuyentien",
@@ -1174,7 +1075,7 @@ def register_all_commands(b_target):
       status = "CHÚA TỂ WIBU / BÁ KHÍ OTAKU 👑🌀"
       waifu = "Tất cả Waifu trong mọi Anime Isekai"
       anime_hours = "24/7 (Không ngủ, chỉ cày Anime)"
-      quote = "Sống ở thế giới thực làm đéo gì, ước gì bị xe tải đâm để Chuyển Sinh!"
+      quote = "Ước Được Xe Tải Đâm Để Chuyển Sinh"
 
     embed = discord.Embed(
         title="🌸 MÁY ĐO ĐỘ WIBU OTAKU 🌸",
@@ -1191,7 +1092,7 @@ def register_all_commands(b_target):
     )
     embed.set_thumbnail(url=target.display_avatar.url)
     embed.set_footer(
-        text=f"Kiểm tra bởi {interaction.user.name} • Wibu v1.0"
+        text=f"Kiểm tra bởi {interaction.user.name} • EPR"
     )
     await interaction.followup.send(embed=embed)
 
@@ -1252,23 +1153,6 @@ def register_all_commands(b_target):
     embed.set_footer(text="Bot by Becus • BotInfo")
     await interaction.followup.send(embed=embed)
 
-  @b_target.tree.command(
-      name="video", description="Gửi video hoặc ảnh trực tiếp từ thiết bị"
-  )
-  @app_commands.describe(
-      file="Chọn file video hoặc ảnh", noidung="Nội dung kèm theo (tuỳ chọn)"
-  )
-  async def video_slash(
-      interaction: discord.Interaction,
-      file: discord.Attachment,
-      noidung: str = None,
-  ):
-    await interaction.response.defer()
-    file_bytes = await file.read()
-    discord_file = discord.File(BytesIO(file_bytes), filename=file.filename)
-    msg_content = noidung if noidung else f"{interaction.user.mention}"
-    await interaction.followup.send(content=msg_content, file=discord_file)
-
   class MenuSelect(discord.ui.Select):
 
     def __init__(self):
@@ -1323,8 +1207,6 @@ def register_all_commands(b_target):
                 "🤓**`/wibu`**\n"
                 "➱ Phân tích mức độ nghiện Anime\n\n"
 
-                "💾**`/video`**\n"
-                "➱ Gửi tệp video hoặc hình ảnh\n\n"
 
                 "💵**`/chuyentien`**\n"
                 "➱ Chuyển khoản ngân hàng trực tuyến\n\n"
@@ -1377,17 +1259,8 @@ def register_all_commands(b_target):
         embed.add_field(
             name="Lệnh Quản Lý",
             value=(
-                "⚪**`/whitelist`**\n"
-                "➱ Xem danh sách Whitelist\n\n"
-
                 "⚫**`/blacklist`**\n"
                 "➱ Xem danh sách Blacklist\n\n"
-
-                "✅**`/whitelistadd`**\n"
-                "➱ Thêm user vào Whitelist\n\n"
-
-                "⛔**`/whitelistremove`**\n"
-                "➱ Xóa user khỏi Whitelist\n\n"
 
                 "✅**`/blacklistadd`**\n"
                 "➱ Thêm user vào Blacklist\n\n"
@@ -1396,7 +1269,10 @@ def register_all_commands(b_target):
                 "➱ Xóa user khỏi Blacklist\n\n"
 
                 "🚪**`/outserver`**\n"
-                "➱ Chọn bot và server để out"
+                "➱ Chọn bot và server để out\n\n"
+
+                "🔗**`/linkserver`**\n"
+                "➱ Liệt kê tên toàn bộ server của bot đang hoạt động"
             ),
             inline=False,
         )
@@ -1404,7 +1280,8 @@ def register_all_commands(b_target):
       embed.set_image(url=banner_url)
       embed.set_footer(text="bot by becus")
       embed.timestamp = discord.utils.utcnow()
-      embed.set_thumbnail(url=thumbnail_url)
+      if category == "war":
+        embed.set_thumbnail(url=thumbnail_url)
 
       await interaction.response.edit_message(embed=embed, view=MenuView())
 
@@ -1433,13 +1310,13 @@ def register_all_commands(b_target):
     embed = discord.Embed(
         title="🌊HƯỚNG DẪN SỬ DỤNG BOT - EMPEROR",
         description=(
-            "🌬️**`Vào Server Để Add Bot - Muốn Mạnh Thì Add Nhiều Vào`**"
+            "🌬️**Vào Server Để Add Bot - Bot Được Tạo Bởi Gehihi**😂"
         ),
         color=discord.Color.from_rgb(255, 0, 0),
     )
     embed.set_image(
         url=(
-            "https://cdn.discordapp.com/attachments/1533301742610022521/1544228395754201099/becus.gif?ex=6ab21c43&is=6ab0cac3&hm=9c8489a88862082cbca6b3d0b20bba3c4e3f3887e093ffbb7a236e2f387030f8&"
+            "https://cdn.discordapp.com/attachments/1551512664788832367/1554492022939713566/86e220e1f2c14c31ec141aa465cb5b9a.gif?ex=6abd1503&is=6abbc383&hm=3d8681726d36c69d7e0f6e776a60dfce4841a13162f3fe481307172c0c5d5449&"
         )
     )
     embed.timestamp = discord.utils.utcnow()
@@ -1834,7 +1711,147 @@ class OutServerView(discord.ui.View):
         view=None,
     )
 
+class LinkServerView(discord.ui.View):
+
+  def __init__(self, entries, owner_id):
+    super().__init__(timeout=300)
+    self.entries = entries
+    self.owner_id = owner_id
+    self.current_page = 0
+    self.per_page = 8
+    self.max_pages = max(1, math.ceil(len(entries) / self.per_page))
+    self._sync_buttons()
+
+  def _sync_buttons(self):
+    self.prev_button.disabled = self.current_page <= 0
+    self.next_button.disabled = self.current_page >= self.max_pages - 1
+
+  def get_embed(self):
+    embed = discord.Embed(
+        title="🔗 DANH SÁCH LINK SERVER CỦA CÁC BOT",
+        color=discord.Color.red(),
+    )
+
+    if not self.entries:
+      embed.description = "Không tìm thấy server nào mà các bot đang tham gia."
+      embed.set_footer(text="Owner Control")
+      return embed
+
+    start = self.current_page * self.per_page
+    end = start + self.per_page
+    page_items = self.entries[start:end]
+
+    lines = []
+    for idx, item in enumerate(page_items, start + 1):
+      bot_text = ", ".join(item["bots"])
+      invite = item["invite"] or "Không tạo được link mời"
+      lines.append(
+          f"**{idx}. {item['name']}**\n"
+          f"🤖 {bot_text}\n"
+          f"🔗 {invite}"
+      )
+
+    embed.description = "\n\n".join(lines)
+    embed.set_footer(text=f"Trang {self.current_page + 1}/{self.max_pages} • Chỉ Owner")
+    return embed
+
+  async def interaction_check(self, interaction: discord.Interaction):
+    if interaction.user.id != self.owner_id:
+      if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True)
+      return False
+    return True
+
+  @discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary)
+  async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    await interaction.response.defer(ephemeral=True)
+    if self.current_page > 0:
+      self.current_page -= 1
+      self._sync_buttons()
+    await interaction.edit_original_response(embed=self.get_embed(), view=self)
+
+  @discord.ui.button(label="➡️", style=discord.ButtonStyle.secondary)
+  async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    await interaction.response.defer(ephemeral=True)
+    if self.current_page < self.max_pages - 1:
+      self.current_page += 1
+      self._sync_buttons()
+    await interaction.edit_original_response(embed=self.get_embed(), view=self)
+
+
+async def _collect_linkserver_entries():
+  bots = [bot1, bot2, bot3, bot4, bot5]
+  grouped = {}
+
+  for index, bot in enumerate(bots, 1):
+    for guild in bot.guilds:
+      item = grouped.setdefault(
+          guild.id,
+          {
+              "name": guild.name,
+              "bots": [],
+              "guild": guild,
+              "bot": bot,
+          },
+      )
+      bot_label = f"Bot {index}"
+      if bot_label not in item["bots"]:
+        item["bots"].append(bot_label)
+
+  entries = []
+  for item in sorted(grouped.values(), key=lambda x: x["name"].lower()):
+    guild = item["guild"]
+    invite_link = None
+
+    try:
+      invite_link = guild.vanity_url
+    except Exception:
+      invite_link = None
+
+    if not invite_link:
+      me = guild.me
+      if me is not None:
+        for channel in guild.text_channels:
+          try:
+            if channel.permissions_for(me).create_instant_invite:
+              invite = await channel.create_invite(
+                  max_age=3600,
+                  max_uses=0,
+                  reason="Owner /linkserver",
+              )
+              invite_link = invite.url
+              break
+          except (discord.Forbidden, discord.HTTPException):
+            continue
+          except Exception:
+            continue
+
+    entries.append(
+        {
+            "name": guild.name,
+            "bots": item["bots"],
+            "invite": invite_link,
+        }
+    )
+
+  return entries
+
+
 def register_admin_commands(b_target):
+
+  @b_target.tree.command(
+      name="linkserver",
+      description="Liệt kê tên và link mời của toàn bộ server các bot đang ở (Owner)",
+  )
+  async def linkserver_slash(interaction: discord.Interaction):
+    if not check_owner(interaction.user.id):
+      await interaction.response.defer(ephemeral=True)
+      return
+
+    await interaction.response.defer(ephemeral=True)
+    entries = await _collect_linkserver_entries()
+    view = LinkServerView(entries, interaction.user.id)
+    await interaction.followup.send(embed=view.get_embed(), view=view, ephemeral=True)
 
   @b_target.tree.command(
       name="outserver",
@@ -1908,22 +1925,6 @@ def register_admin_commands(b_target):
       )
 
   @b_target.tree.command(
-      name="whitelist", description="Xem danh sách Whitelist (Chỉ Owner)"
-  )
-  async def whitelist_slash(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=False)
-    if not check_owner(interaction.user.id):
-      await interaction.followup.send(
-          "❌ Lệnh này chỉ dành riêng cho (Owner)!", ephemeral=False
-      )
-      return
-
-    data = load_access_control()
-    wl = data.get("whitelist", [])
-    view = PaginationView(wl, "📋 DANH SÁCH WHITELIST", b_target)
-    await interaction.followup.send(embed=view.get_embed(), view=view, ephemeral=True)
-
-  @b_target.tree.command(
       name="blacklist", description="Xem danh sách Blacklist (Chỉ Owner)"
   )
   async def blacklist_slash(interaction: discord.Interaction):
@@ -1938,81 +1939,6 @@ def register_admin_commands(b_target):
     bl = data.get("blacklist", [])
     view = PaginationView(bl, "📋 DANH SÁCH BLACKLIST", b_target)
     await interaction.followup.send(embed=view.get_embed(), view=view, ephemeral=True)
-
-  @b_target.tree.command(
-      name="whitelistadd",
-      description="Thêm user vào Whitelist bằng ID hoặc tag (Chỉ Owner)",
-  )
-  @app_commands.describe(user_input="Nhập ID hoặc tag (@) của user cần thêm")
-  async def whitelistadd_slash(
-      interaction: discord.Interaction, user_input: str
-  ):
-    await interaction.response.defer(ephemeral=False)
-    if not check_owner(interaction.user.id):
-      await interaction.followup.send(
-          "❌ Lệnh này chỉ dành riêng cho (Owner)!", ephemeral=False
-      )
-      return
-
-    match = re.search(r"\d+", user_input)
-    if not match:
-      await interaction.followup.send(
-          "❌ Không tìm thấy ID hợp lệ trong thông tin bạn nhập!", ephemeral=False
-      )
-      return
-
-    target_id = int(match.group())
-    data = load_access_control()
-    if target_id not in data["whitelist"] and str(target_id) not in [
-        str(x) for x in data["whitelist"]
-    ]:
-      data["whitelist"].append(target_id)
-      if target_id in data["blacklist"] or str(target_id) in [
-          str(x) for x in data["blacklist"]
-      ]:
-        data["blacklist"] = [
-            x for x in data["blacklist"] if str(x) != str(target_id)
-        ]
-      save_access_control(data)
-      await interaction.followup.send(
-          f"✅ Đã thêm <@{target_id}> vào **Whitelist**!", ephemeral=False
-      )
-    else:
-      await interaction.followup.send(
-          f"⚠️ <@{target_id}> đã có sẵn trong Whitelist rồi!", ephemeral=False
-      )
-
-  @b_target.tree.command(
-      name="whitelistremove",
-      description="Xóa user khỏi Whitelist bằng ID hoặc tag (Chỉ Owner)",
-  )
-  @app_commands.describe(user_input="Nhập ID hoặc tag (@) của user cần xóa")
-  async def whitelistremove_slash(
-      interaction: discord.Interaction, user_input: str
-  ):
-    await interaction.response.defer(ephemeral=False)
-    if not check_owner(interaction.user.id):
-      await interaction.followup.send(
-          "❌ Lệnh này chỉ dành riêng cho (Owner)!", ephemeral=False
-      )
-      return
-
-    match = re.search(r"\d+", user_input)
-    if not match:
-      await interaction.followup.send(
-          "❌ Không tìm thấy ID hợp lệ trong thông tin bạn nhập!", ephemeral=False
-      )
-      return
-
-    target_id = int(match.group())
-    data = load_access_control()
-    data["whitelist"] = [
-        x for x in data["whitelist"] if str(x) != str(target_id)
-    ]
-    save_access_control(data)
-    await interaction.followup.send(
-        f"✅ Đã xóa <@{target_id}> khỏi **Whitelist**!", ephemeral=False
-    )
 
   @b_target.tree.command(
       name="blacklistadd",
@@ -2042,12 +1968,6 @@ def register_admin_commands(b_target):
         str(x) for x in data["blacklist"]
     ]:
       data["blacklist"].append(target_id)
-      if target_id in data["whitelist"] or str(target_id) in [
-          str(x) for x in data["whitelist"]
-      ]:
-        data["whitelist"] = [
-            x for x in data["whitelist"] if str(x) != str(target_id)
-        ]
       save_access_control(data)
       await interaction.followup.send(
           f"✅ Đã thêm <@{target_id}> vào **Blacklist**!", ephemeral=False
@@ -2104,11 +2024,11 @@ register_admin_commands(bot5)
 
 
 async def main():
-  token1 = "TOKEN1"
-  token2 = "TOKEN2"
-  token3 = "TOKEN3"
-  token4 = "TOKEN4"
-  token5 = "TOKEN5"
+  token1 = os.getenv("TOKEN1")
+  token2 = os.getenv("TOKEN2")
+  token3 = os.getenv("TOKEN3")
+  token4 = os.getenv("TOKEN4")
+  token5 = os.getenv("TOKEN5")
 
   setup_bot_events(bot1, "Bot 1")
   setup_bot_events(bot2, "Bot 2")
