@@ -1230,25 +1230,25 @@ def register_all_commands(b_target):
             name="Lệnh War",
             value=(
                 "💬**`/say`**\n"
-                "➱ Mượn bot gửi tin nhắn\n\n"
+                "<a:arrow2:1554884049531834519> Mượn bot gửi tin nhắn\n\n"
 
                 "🗯️**`b!noidung nội_dung số_lượng`**\n"
-                "<a:arrow:1554843161694572634> Xả nội dung tùy chỉnh tối đa 999 lần <a:cross:1554034613859389551>\n\n"
+                "<a:arrow2:1554884049531834519> Xả nội dung tùy chỉnh tối đa 999 lần <a:cross:1554034613859389551>\n\n"
 
-                "<a:scythe:1554034754121371649>**`b!xangon @user/ID số_lượng`**\n"
-                "<a:arrow:1554843161694572634> Xả ngôn vào thằng ngu lồn V1 tối đa 999 <a:cross:1554034613859389551>\n\n"
+                "<a:lickL:1554884178024333482>**`b!xangon @user/ID số_lượng`**\n"
+                "<a:arrow2:1554884049531834519> Xả ngôn vào thằng ngu lồn V1 tối đa 999 <a:cross:1554034613859389551>\n\n"
 
-                "<a:scythe:1554034754121371649>**`b!xangonV2 @user/ID số_lượng`**\n"
-                "<a:arrow:1554843161694572634> Xả ngôn vào thằng ngu lồn V2 tối đa 999 <a:cross:1554034613859389551>\n\n"
+                "<a:lickL:1554884178024333482>**`b!xangonV2 @user/ID số_lượng`**\n"
+                "<a:arrow2:1554884049531834519> Xả ngôn vào thằng ngu lồn V2 tối đa 999 <a:cross:1554034613859389551>\n\n"
 
-                "<a:scythe:1554034754121371649>**`b!xangonV3 @user/ID`**\n"
-                "<a:arrow:1554843161694572634> Xả ngôn vĩnh viễn lên thằng ngu lồn <a:cross:1554034613859389551>\n\n"
+                "<a:lickL:1554884178024333482>**`b!xangonV3 @user/ID`**\n"
+                "<a:arrow2:1554884049531834519> Xả ngôn vĩnh viễn lên thằng ngu lồn <a:cross:1554034613859389551>\n\n"
 
-                "<a:scythe:1554034754121371649>**`/treodakenh`**\n"
-                "<a:arrow:1554843161694572634> Xả ngôn đa kênh lên thằng ngu lồn <a:cross:1554034613859389551>\n\n"
+                "<a:lickL:1554884178024333482>**`/treodakenh`**\n"
+                "<a:arrow2:1554884049531834519> Xả ngôn đa kênh lên thằng ngu lồn <a:cross:1554034613859389551>\n\n"
 
                 "<a:c_:1554838191926939679>**`b!stop`** hoặc **`/stop`**\n"
-                "<a:arrow:1554843161694572634> Dừng all tiến trình spam/treo trong server"
+                "<a:arrow2:1554884049531834519> Dừng all tiến trình spam/treo trong server"
             ),
             inline=False,
         )
