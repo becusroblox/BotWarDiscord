@@ -61,13 +61,9 @@ def check_admin(member):
   return False
 
 
-
 # ---------------------------------------------------------------------------
 # Lightweight RAM caches
 # ---------------------------------------------------------------------------
-# These caches avoid disk reads on every Discord message/command. The JSON
-# files remain the persistent source of truth and are written only when data
-# actually changes.
 _access_cache = None
 _users_cache = None
 _cache_lock = asyncio.Lock()
@@ -82,8 +78,8 @@ WEBHOOK_POOL_FILE = "becus_webhooks.json"
 WEBHOOK_POOL_SIZE = 10
 WEBHOOK_NAME_PREFIX = "/BECUS "
 WEBHOOK_BANNER_URL = (
-    "https://cdn.discordapp.com/attachments/1551512664788832367/1555891295287771136/439f96d75b5336231e60b5252132830d.gif"
-    "?backend=b2&ex=6ac22c2f&is=6ac0daaf&hm=aa19b5517b7e8f1f2b01a5935c86eca8e08c27b3463ed933cf7043cecd37cd50&"
+    "https://cdn.discordapp.com/attachments/1551512664788832367/1555820547806593134/6c1a42d4f32acf94040c7201e1184460.gif"
+    "?backend=b2&ex=6ac1ea4c&is=6ac098cc&hm=1c97980d701bbb9846c473c84c6ac7b59acfb3bfac0d20c5373eb4be4228e7a0&"
 )
 _webhook_pool_lock = asyncio.Lock()
 
@@ -123,8 +119,6 @@ def _webhook_entry(guild_id, channel_id, name, url):
       "name": str(name),
       "url": str(url),
   }
-
-
 async def _fetch_existing_webhook(webhook_url, bot_instance):
   """Return the webhook if its URL is still valid, respecting Discord 429s."""
   try:
@@ -158,10 +152,6 @@ async def _fetch_existing_webhook(webhook_url, bot_instance):
 async def _ensure_becus_webhook_pool(bot_instance, guild, channel, owner_user):
   """
   Ensure exactly ten usable /BECUS webhooks exist for this guild/channel.
-
-  Existing webhooks are reused. Missing/deleted entries are recreated and
-  persisted immediately. This function never creates a second copy when all
-  five saved webhooks are still valid.
   """
   if guild is None or channel is None:
     return []
@@ -173,8 +163,6 @@ async def _ensure_becus_webhook_pool(bot_instance, guild, channel, owner_user):
     if not isinstance(saved, list):
       saved = []
 
-    # Keep only entries belonging to this channel. The /webhook command is
-    # intentionally channel-scoped so the pool has a deterministic destination.
     channel_entries = [
         entry for entry in saved
         if isinstance(entry, dict)
@@ -184,7 +172,6 @@ async def _ensure_becus_webhook_pool(bot_instance, guild, channel, owner_user):
     valid = []
     seen_ids = set()
 
-    # Validate saved webhook URLs before creating anything new.
     for entry in channel_entries:
       url = entry.get("url")
       if not url:
@@ -206,9 +193,6 @@ async def _ensure_becus_webhook_pool(bot_instance, guild, channel, owner_user):
           )
       )
 
-    # Also inspect the channel for existing /BECUS webhooks. If Discord returns
-    # a usable token, adopt them instead of creating duplicate names after a
-    # state-file reset.
     if len(valid) < WEBHOOK_POOL_SIZE:
       try:
         channel_webhooks = await channel.webhooks()
@@ -251,8 +235,6 @@ async def _ensure_becus_webhook_pool(bot_instance, guild, channel, owner_user):
                 existing_url,
             )
         )
-
-    # Rebuild only the missing slots. This is what prevents duplicate pools.
     used_names = {entry["name"] for entry in valid}
     avatar_bytes = None
     if len(valid) < WEBHOOK_POOL_SIZE:
@@ -315,7 +297,6 @@ async def _ensure_becus_webhook_pool(bot_instance, guild, channel, owner_user):
       )
       used_names.add(desired_name)
 
-    # Keep this guild's other channel pools intact.
     remaining = [
         entry for entry in saved
         if not (
@@ -329,10 +310,6 @@ async def _ensure_becus_webhook_pool(bot_instance, guild, channel, owner_user):
 
 
 async def _get_existing_becus_webhook_pool(bot_instance, guild, channel):
-  """Return only the already-created, usable /BECUS webhook pool.
-
-  This helper never creates webhooks. Creation/repair belongs to /webhook.
-  """
   if guild is None or channel is None:
     return []
 
@@ -371,12 +348,6 @@ async def _get_existing_becus_webhook_pool(bot_instance, guild, channel):
 
 
 async def _send_becus_webhook_once(bot_instance, message, target):
-  """
-  Send exactly one V3 message through one existing /BECUS webhook.
-
-  If the pool is missing or a webhook was deleted, rebuild the missing
-  webhook(s) first. A one-second delay is kept before the single send.
-  """
   guild = message.guild
   channel = message.channel
   if guild is None or channel is None:
@@ -398,11 +369,9 @@ async def _send_becus_webhook_once(bot_instance, message, target):
   if not pool:
     return False, "Không thể tạo hoặc tìm thấy webhook /BECUS. Kiểm tra quyền Manage Webhooks."
 
-  # Use a random valid member of the ten-webhook pool, but perform only one send.
   entry = random.choice(pool)
   webhook = await _fetch_existing_webhook(entry["url"], bot_instance)
   if webhook is None:
-    # One repair pass: recreate only missing webhooks, then retry once.
     pool = await _ensure_becus_webhook_pool(
         bot_instance,
         guild,
@@ -432,19 +401,10 @@ async def _send_becus_webhook_once(bot_instance, message, target):
   if not lines:
     lines = ["Becus On Top"]
 
-  # The target mention is appended to the end, with a Markdown heading marker.
   content = f"# {random.choice(lines)} {target.mention}"
-
-  # Explicit one-second delay. There is deliberately no loop here.
-  await asyncio.sleep(0.3)
-
-  # One logical message only. If Discord rejects the HTTP request with 429,
-  # wait for Discord's exact retry_after and retry the same single send.
-  # There is no spam loop and no parallel send here.
   deadline = asyncio.get_running_loop().time() + 120.0
-  send_count = 9999
 
-  for _ in range(send_count):
+  for _ in range(1):
     while True:
       try:
         await webhook.send(
@@ -472,15 +432,11 @@ async def _send_becus_webhook_once(bot_instance, message, target):
       except (discord.NotFound, discord.Forbidden):
         return False, "Webhook đã bị xóa hoặc không còn quyền gửi."
       except (asyncio.TimeoutError, OSError):
-        # Do not retry an ambiguous send: Discord may have accepted the request
-        # even if the client timed out, which could create a duplicate message.
         return False, "Kết nối tới webhook bị lỗi."
       except Exception:
         return False, "Không thể gửi qua webhook."
 
   return False, "Không thể gửi qua webhook."
-
-
 def _ensure_access_cache():
   global _access_cache
   if _access_cache is not None:
@@ -504,15 +460,11 @@ def _ensure_access_cache():
     blacklist = []
 
   _access_cache = {"blacklist": blacklist}
-
-  # Rewrite old files so only blacklist data is kept.
   save_access_control(_access_cache)
   return _access_cache
 
 
 def load_access_control():
-  # Return the shared in-memory object. Existing command code can keep using
-  # the same function without causing repeated disk I/O.
   return _ensure_access_cache()
 
 
@@ -520,8 +472,6 @@ def save_access_control(data):
   global _access_cache
   _access_cache = data
 
-  # Atomic replacement prevents a partial JSON file if the process is
-  # interrupted while writing.
   tmp_file = f"{ACCESS_FILE}.tmp"
   try:
     with open(tmp_file, "w", encoding="utf-8") as f:
@@ -613,6 +563,8 @@ def check_blacklist(user_id):
   data = _ensure_access_cache()
   uid = str(user_id)
   return any(str(x) == uid for x in data.get("blacklist", []))
+
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
@@ -630,7 +582,6 @@ becus_tasks = {}
 
 
 def _track_task(registry, guild_id, task):
-  """Register a task and automatically remove it when it finishes."""
   tasks_for_guild = registry.setdefault(guild_id, [])
   tasks_for_guild.append(task)
 
@@ -660,7 +611,6 @@ def _collect_guild_tasks(guild_id):
 
 
 async def _cancel_guild_tasks(guild_id):
-  """Cancel every tracked task for one guild and wait for cancellation to settle."""
   tasks_for_guild = _collect_guild_tasks(guild_id)
   for task in tasks_for_guild:
     task.cancel()
@@ -697,8 +647,6 @@ async def before_change_status():
 
 
 async def raw_send_message(bot_inst, channel_id, content):
-  # Use discord.py's normal Channel.send() path so built-in rate-limit
-  # handling is respected. If Discord still returns 429, obey retry_after.
   channel = bot_inst.get_channel(channel_id)
   if channel is None:
     try:
@@ -806,8 +754,6 @@ def setup_bot_events(b_inst, name):
 
   @b_inst.event
   async def on_interaction(interaction: discord.Interaction):
-    # Blacklisted users receive no bot response for ANY interaction type.
-    # Individual command/view callbacks also enforce this guard directly.
     if check_blacklist(interaction.user.id):
       return
 
@@ -925,7 +871,6 @@ def setup_bot_events(b_inst, name):
       spam_tasks[guild_id].append(task)
       await b_inst.process_commands(message)
       return
-    # --- 2. LỆNH XANGON (V1, V2, V3) ---
     if (
         content_lower.startswith("b!xangonv3")
         or content_lower.startswith("b!xangonv2")
@@ -1031,7 +976,6 @@ def setup_bot_events(b_inst, name):
       await b_inst.process_commands(message)
       return
 
-    # --- 3. LỆNH NOIDUNG ---
     if content_lower.startswith("b!noidung"):
       if not check_admin(message.author):
         return
@@ -1077,7 +1021,6 @@ def setup_bot_events(b_inst, name):
       await b_inst.process_commands(message)
       return
 
-    # --- 4. LỆNH STOP ---
     if content_lower.startswith("b!stop"):
       if not check_admin(message.author):
         return
@@ -1095,7 +1038,6 @@ def setup_bot_events(b_inst, name):
         )
       return
 
-    # No automatic responses to ordinary chat messages.
     await b_inst.process_commands(message)
 
 
@@ -1174,6 +1116,7 @@ class TreoChannelSelectView(discord.ui.View):
 
     msg = f"✅ Đã chọn user: {self.selected_user.mention if self.selected_user else 'Không rõ'}"
     await interaction.followup.send(msg, ephemeral=True)
+
   @discord.ui.button(label="Start", style=ButtonStyle.green, custom_id="treo_start_btn")
   async def start_button(self, interaction: discord.Interaction, button: Button):
     if check_blacklist(interaction.user.id):
@@ -1195,7 +1138,7 @@ class TreoChannelSelectView(discord.ui.View):
         "BECUSwarFilengonV2.txt",
         "BECUSwarFilengonV3.txt",
     ]
-    # Load text files through the RAM cache; refresh automatically when a file changes.
+
     def _load_cached_text_file(fname):
       mtime = os.path.getmtime(fname) if os.path.exists(fname) else 0
       if fname in _file_cache and _file_cache_mtime.get(fname) == mtime:
@@ -1277,8 +1220,6 @@ class TreoChannelSelectView(discord.ui.View):
           "⚠️ Không có tiến trình nào đang chạy trong server này.",
           ephemeral=True,
       )
-
-
 def register_all_commands(b_target):
 
   @b_target.tree.command(
@@ -1589,7 +1530,6 @@ def register_all_commands(b_target):
     )
     embed.set_footer(text="Bot by Becus • BotInfo")
     await interaction.followup.send(embed=embed)
-
   class MenuSelect(discord.ui.Select):
 
     def __init__(self):
@@ -1645,7 +1585,6 @@ def register_all_commands(b_target):
 
                 "🤓**`/wibu`**\n"
                 "➱ Phân tích mức độ nghiện Anime\n\n"
-
 
                 "💵**`/chuyentien`**\n"
                 "➱ Chuyển khoản ngân hàng trực tuyến\n\n"
@@ -1772,6 +1711,8 @@ def register_all_commands(b_target):
     )
 
     await interaction.followup.send(embed=embed, view=MenuView())
+
+
 class PaginationView(discord.ui.View):
 
   def __init__(self, data_list, title, b_target):
@@ -1822,11 +1763,7 @@ class PaginationView(discord.ui.View):
       self.current_page += 1
       self.update_buttons()
       await interaction.response.edit_message(embed=self.get_embed(), view=self)
-
-
-
 class OutServerView(discord.ui.View):
-  """Owner-only panel for selecting active bots and a guild to leave."""
 
   def __init__(self, owner_id: int):
     super().__init__(timeout=300)
@@ -1983,8 +1920,8 @@ class OutServerView(discord.ui.View):
     )
 
     description = (
-        "Chọn **Bot** ở ô đầu tiên, sau đó chọn **Server** ở ô thứ hai.\n"
-        "Bấm **Start** để các bot đã chọn rời server đã chọn.\n\n"
+        "Chọn **Bot** sau đó chọn **Server**\n"
+        "Bấm **Start** để bot đã chọn rời server\n\n"
         f"🤖 **Bot đã chọn:** {bot_text}\n"
         f"🏠 **Server đã chọn:** {server_text}"
     )
@@ -2037,7 +1974,6 @@ class OutServerView(discord.ui.View):
     except (IndexError, TypeError, ValueError):
       self.selected_guild_id = None
     await interaction.edit_original_response(embed=self.get_embed(), view=self)
-
   @discord.ui.button(
       label="⬅️",
       style=discord.ButtonStyle.secondary,
@@ -2073,7 +2009,6 @@ class OutServerView(discord.ui.View):
       custom_id="outserver_start",
   )
   async def start_out(self, interaction: discord.Interaction, button: discord.ui.Button):
-    # Acknowledge immediately so the interaction does not time out while bots leave.
     if check_blacklist(interaction.user.id):
       return
     await interaction.response.defer(ephemeral=True)
@@ -2116,7 +2051,6 @@ class OutServerView(discord.ui.View):
     skipped = []
     failed = []
 
-    # Leave sequentially with a small pause so each bot has time to finish its request.
     for index, bot in zip(self.selected_bot_indexes, selected_bots):
       bot_guild = bot.get_guild(self.selected_guild_id)
       bot_label = f"Bot {index + 1}"
@@ -2175,6 +2109,7 @@ class OutServerView(discord.ui.View):
         ),
         view=None,
     )
+
 
 class LinkServerView(discord.ui.View):
 
@@ -2248,8 +2183,6 @@ class LinkServerView(discord.ui.View):
       self.current_page += 1
       self._sync_buttons()
     await interaction.edit_original_response(embed=self.get_embed(), view=self)
-
-
 async def _collect_linkserver_entries():
   bots = [bot1, bot2, bot3, bot4, bot5]
   grouped = {}
@@ -2308,86 +2241,77 @@ async def _collect_linkserver_entries():
   return entries
 
 
-async def _send_becus_webhook_selected(bot_instance, guild, channel, target, selected_entries):
-  """Send exactly one message through one randomly selected /BECUS webhook."""
-  if guild is None or channel is None or target is None:
-    return False, "Thiếu server, kênh hoặc user cần gửi."
-  if not selected_entries:
-    return False, "Chọn ít nhất 1 webhook."
+async def _run_single_webhook_loop(bot_instance, entry, channel, targets):
+  """Chạy vòng lặp vô hạn cho 1 webhook riêng biệt song song, giữ nguyên bắt lỗi Rate Limit."""
+  try:
+    webhook = await _fetch_existing_webhook(entry["url"], bot_instance)
+  except Exception:
+    webhook = None
 
-  valid_entries = []
-  for entry in selected_entries:
-    try:
-      webhook = await _fetch_existing_webhook(entry["url"], bot_instance)
-    except Exception:
-      webhook = None
-    if webhook is not None:
-      valid_entries.append((entry, webhook))
-
-  if not valid_entries:
-    return False, "Webhook đã bị xóa hoặc không còn khả dụng."
-
-  entry, webhook = random.choice(valid_entries)
+  if webhook is None:
+    return
 
   source_files = [
       os.path.join(os.getcwd(), "BECUSwarFilengon.txt"),
       os.path.join(os.getcwd(), "BECUSwarFilengonV3.txt"),
   ]
-  lines = []
-  for file_path in source_files:
-    if os.path.exists(file_path):
-      try:
-        with open(file_path, "r", encoding="utf-8") as f:
-          lines.extend(line.strip() for line in f if line.strip())
-      except (OSError, UnicodeError):
-        pass
-  if not lines:
-    lines = ["Becus On Top"]
 
-  content = f"# {random.choice(lines)} {target.mention}"
+  mentions_str = " ".join(t.mention for t in targets if t)
 
-  # Keep the requested one-second delay. The task is cancellable by /stop or b!stop.
-  await asyncio.sleep(1)
-
-  send_count = 1
-  deadline = asyncio.get_running_loop().time() + 120.0
-  for _ in range(send_count):
-    while True:
-      try:
-        await webhook.send(
-            content,
-            wait=False,
-            allowed_mentions=discord.AllowedMentions(
-                users=True,
-                roles=False,
-                everyone=False,
-            ),
-        )
-        return True, entry["name"]
-      except discord.HTTPException as e:
-        if e.status == 429:
+  while True:
+    try:
+      lines = []
+      for file_path in source_files:
+        if os.path.exists(file_path):
           try:
-            retry_after = max(0.1, float(getattr(e, "retry_after", 1.0)))
-          except (TypeError, ValueError):
-            retry_after = 1.0
-          remaining = deadline - asyncio.get_running_loop().time()
-          if remaining <= 0:
-            return False, "Webhook vẫn bị Discord rate limit sau 120 giây chờ Retry-After."
-          await asyncio.sleep(min(retry_after, remaining))
-          continue
-        return False, "Webhook đã bị lỗi HTTP khi gửi."
-      except (discord.NotFound, discord.Forbidden):
-        return False, "Webhook đã bị xóa hoặc không còn quyền gửi."
-      except (asyncio.TimeoutError, OSError):
-        return False, "Kết nối tới webhook bị lỗi."
-      except asyncio.CancelledError:
-        raise
-      except Exception:
-        return False, "Không thể gửi qua webhook."
+            with open(file_path, "r", encoding="utf-8") as f:
+              lines.extend(line.strip() for line in f if line.strip())
+          except (OSError, UnicodeError):
+            pass
+      if not lines:
+        lines = ["Becus On Top"]
 
-  return False, "Không thể gửi qua webhook."
+      content = f"# {random.choice(lines)} {mentions_str}"
 
+      deadline = asyncio.get_running_loop().time() + 120.0
+      while True:
+        try:
+          await webhook.send(
+              content,
+              wait=False,
+              allowed_mentions=discord.AllowedMentions(
+                  users=True,
+                  roles=False,
+                  everyone=False,
+              ),
+          )
+          break
+        except discord.HTTPException as e:
+          if e.status == 429:
+            try:
+              retry_after = max(0.1, float(getattr(e, "retry_after", 1.0)))
+            except (TypeError, ValueError):
+              retry_after = 1.0
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+              break
+            await asyncio.sleep(min(retry_after, remaining))
+            continue
+          return
+        except (discord.NotFound, discord.Forbidden):
+          return
+        except (asyncio.TimeoutError, OSError):
+          return
+        except asyncio.CancelledError:
+          raise
+        except Exception:
+          return
 
+      await asyncio.sleep(1)
+    except asyncio.CancelledError:
+      raise
+    except Exception:
+      await asyncio.sleep(1)
 class BecusWebhookView(discord.ui.View):
   def __init__(self, bot_instance, pool, owner_id):
     super().__init__(timeout=300)
@@ -2396,7 +2320,7 @@ class BecusWebhookView(discord.ui.View):
     self.owner_id = owner_id
     self.selected_webhooks = []
     self.selected_channel = None
-    self.selected_user = None
+    self.selected_users = []
 
     options = [
         discord.SelectOption(
@@ -2407,9 +2331,9 @@ class BecusWebhookView(discord.ui.View):
         for index, entry in enumerate(self.pool[:WEBHOOK_POOL_SIZE])
     ]
     self.webhook_select = discord.ui.Select(
-        placeholder="Chọn webhook (có thể chọn cả 5)",
+        placeholder="Chọn webhook (tối đa 10)",
         min_values=1,
-        max_values=1,
+        max_values=min(10, len(options)),
         options=options,
         custom_id="becus_webhook_select",
     )
@@ -2427,9 +2351,9 @@ class BecusWebhookView(discord.ui.View):
     self.add_item(self.channel_select)
 
     self.user_select = discord.ui.UserSelect(
-        placeholder="Chọn thằng ngu để chửi",
+        placeholder="Chọn thằng ngu để chửi (tối đa 3)",
         min_values=1,
-        max_values=1,
+        max_values=3,
         custom_id="becus_user_select",
     )
     self.user_select.callback = self.user_callback
@@ -2464,9 +2388,10 @@ class BecusWebhookView(discord.ui.View):
 
   async def user_callback(self, interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    self.selected_user = self.user_select.values[0] if self.user_select.values else None
+    self.selected_users = list(self.user_select.values) if self.user_select.values else []
+    mentions_str = " ".join(u.mention for u in self.selected_users) if self.selected_users else "Không rõ"
     await interaction.followup.send(
-        f"Đã chọn user: {self.selected_user.mention if self.selected_user else 'Không rõ'}",
+        f"Đã chọn {len(self.selected_users)} user: {mentions_str}",
         ephemeral=True,
     )
 
@@ -2479,7 +2404,7 @@ class BecusWebhookView(discord.ui.View):
     if self.selected_channel is None:
       await interaction.followup.send("❌ Vui lòng chọn kênh gửi.", ephemeral=True)
       return
-    if self.selected_user is None:
+    if not self.selected_users:
       await interaction.followup.send("❌ Vui lòng chọn user cần tag.", ephemeral=True)
       return
 
@@ -2493,23 +2418,27 @@ class BecusWebhookView(discord.ui.View):
       )
       return
 
-    async def worker():
+    async def master_worker():
+      tasks = [
+          asyncio.create_task(
+              _run_single_webhook_loop(
+                  self.bot_instance,
+                  entry,
+                  self.selected_channel,
+                  self.selected_users,
+              )
+          )
+          for entry in self.selected_webhooks
+      ]
       try:
-        ok, status = await _send_becus_webhook_selected(
-            self.bot_instance,
-            interaction.guild,
-            self.selected_channel,
-            self.selected_user,
-            self.selected_webhooks,
-        )
-        if not ok:
-          await interaction.followup.send(f"❌ {status}", ephemeral=True)
+        await asyncio.gather(*tasks)
       except asyncio.CancelledError:
+        for t in tasks:
+          if not t.done():
+            t.cancel()
         raise
-      except Exception as e:
-        print(f"Lỗi /becus: {e}")
 
-    task = asyncio.create_task(worker())
+    task = asyncio.create_task(master_worker())
     _track_task(becus_tasks, guild_id, task)
     await interaction.followup.send(
         "Địt Mẹ Chúng Mày",
@@ -2531,8 +2460,6 @@ class BecusWebhookView(discord.ui.View):
         "🛑 Dừng tác vụ /becus." if stopped else "⚠️ Không có tác vụ /becus đang chạy.",
         ephemeral=True,
     )
-
-
 def register_admin_commands(b_target):
 
   @b_target.tree.command(
@@ -2586,7 +2513,7 @@ def register_admin_commands(b_target):
       entry = next((item for item in pool if item.get("name") == f"{WEBHOOK_NAME_PREFIX}{index}"), None)
       embed.add_field(
           name=f"{index}. {WEBHOOK_NAME_PREFIX}{index}",
-          value="✅ Webhook đang hoạt động." if entry else "❌ Chưa có webhook.",
+          value="<a:__:1554837937957634141> Webhook đang hoạt động." if entry else "❌ Chưa có webhook.",
           inline=False,
       )
 
@@ -2629,9 +2556,8 @@ def register_admin_commands(b_target):
     embed = discord.Embed(
         title="😜 BECUS WEBHOOK",
         description=(
-            "Chọn webhook kênh và thằng ngu  rồi bấm **Start**.\n"
-            "Start kích hoạt webhook trong các webhook đã chọn**, `send_count = 69` "
-            "Delay `asyncio.sleep(3667)`.\n\n"
+            "Chọn webhook kênh và thằng ngu rồi bấm **Start**.\n"
+            "Start kích hoạt webhook chửi chết mẹ thg ngu song song vĩnh viễn.\n\n"
             "Muốn **Stop** thì sài `b!stop` hoặc `/stop` để dừng"
         ),
         color=discord.Color.red(),
@@ -2671,14 +2597,14 @@ def register_admin_commands(b_target):
     if check_blacklist(interaction.user.id):
       return
     if not check_owner(interaction.user.id):
-      # Acknowledge silently so non-owners see no public message.
       await interaction.response.defer(ephemeral=True)
       return
 
-    await interaction.response.defer(ephemeral=False)
+    await interaction.response.defer(ephemeral=True)
     view = OutServerView(interaction.user.id)
-    embed = view.get_embed()
-    await interaction.followup.send(embed=embed, view=view, ephemeral=False)
+    view._refresh_server_guilds()
+    await interaction.followup.send(embed=view.get_embed(), view=view, ephemeral=True)
+
 
   @b_target.tree.command(
       name="say", description="Mượn bot nói"
@@ -2833,41 +2759,34 @@ def register_admin_commands(b_target):
         f"✅ Đã xóa <@{target_id}> khỏi **Blacklist**!", ephemeral=False
     )
 
-
-register_all_commands(bot1)
-register_all_commands(bot2)
-register_all_commands(bot3)
-register_all_commands(bot4)
-register_all_commands(bot5)
-
-register_admin_commands(bot1)
-register_admin_commands(bot2)
-register_admin_commands(bot3)
-register_admin_commands(bot4)
-register_admin_commands(bot5)
+def setup_all_bots():
+  bots = [(bot1, "Bot 1"), (bot2, "Bot 2"), (bot3, "Bot 3"), (bot4, "Bot 4"), (bot5, "Bot 5")]
+  for b_inst, name in bots:
+    setup_bot_events(b_inst, name)
+    register_all_commands(b_inst)
+    register_admin_commands(b_inst)
 
 
 async def main():
-  token1 = os.getenv("TOKEN1")
-  token2 = os.getenv("TOKEN2")
-  token3 = os.getenv("TOKEN3")
-  token4 = os.getenv("TOKEN4")
-  token5 = os.getenv("TOKEN5")
+  setup_all_bots()
+  tokens = [
+      os.getenv("TOKEN1"),
+      os.getenv("TOKEN2"),
+      os.getenv("TOKEN3"),
+      os.getenv("TOKEN4"),
+      os.getenv("TOKEN5"),
+  ]
+  active_tokens = [t for t in tokens if t]
+  if not active_tokens:
+    print("❌ Không tìm thấy Token nào trong biến môi trường!")
+    return
 
-  setup_bot_events(bot1, "Bot 1")
-  setup_bot_events(bot2, "Bot 2")
-  setup_bot_events(bot3, "Bot 3")
-  setup_bot_events(bot4, "Bot 4")
-  setup_bot_events(bot5, "Bot 5")
-
-  await asyncio.gather(
-      bot1.start(token1),
-      bot2.start(token2),
-      bot3.start(token3),
-      bot4.start(token4),
-      bot5.start(token5),
-  )
+  bots = [bot1, bot2, bot3, bot4, bot5]
+  await asyncio.gather(*(b.start(token) for b, token in zip(bots, active_tokens)))
 
 
 if __name__ == "__main__":
-  asyncio.run(main())
+  try:
+    asyncio.run(main())
+  except KeyboardInterrupt:
+    print("Đã dừng hệ thống.")
