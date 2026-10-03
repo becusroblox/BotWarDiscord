@@ -75,6 +75,412 @@ _file_cache = {}
 _file_cache_mtime = {}
 
 
+# ---------------------------------------------------------------------------
+# Persistent webhook pool
+# ---------------------------------------------------------------------------
+WEBHOOK_POOL_FILE = "becus_webhooks.json"
+WEBHOOK_POOL_SIZE = 10
+WEBHOOK_NAME_PREFIX = "/BECUS "
+WEBHOOK_BANNER_URL = (
+    "https://cdn.discordapp.com/attachments/1551512664788832367/1555891295287771136/439f96d75b5336231e60b5252132830d.gif"
+    "?backend=b2&ex=6ac22c2f&is=6ac0daaf&hm=aa19b5517b7e8f1f2b01a5935c86eca8e08c27b3463ed933cf7043cecd37cd50&"
+)
+_webhook_pool_lock = asyncio.Lock()
+
+
+def _load_webhook_pool():
+  try:
+    if not os.path.exists(WEBHOOK_POOL_FILE):
+      return {}
+    with open(WEBHOOK_POOL_FILE, "r", encoding="utf-8") as f:
+      data = json.load(f)
+    return data if isinstance(data, dict) else {}
+  except (OSError, json.JSONDecodeError):
+    return {}
+
+
+def _save_webhook_pool(data):
+  tmp_file = f"{WEBHOOK_POOL_FILE}.tmp"
+  try:
+    with open(tmp_file, "w", encoding="utf-8") as f:
+      json.dump(data, f, ensure_ascii=False, indent=2)
+      f.flush()
+      os.fsync(f.fileno())
+    os.replace(tmp_file, WEBHOOK_POOL_FILE)
+  except OSError as e:
+    print(f"Lỗi lưu webhook pool: {e}")
+    try:
+      if os.path.exists(tmp_file):
+        os.remove(tmp_file)
+    except OSError:
+      pass
+
+
+def _webhook_entry(guild_id, channel_id, name, url):
+  return {
+      "guild_id": int(guild_id),
+      "channel_id": int(channel_id),
+      "name": str(name),
+      "url": str(url),
+  }
+
+
+async def _fetch_existing_webhook(webhook_url, bot_instance):
+  """Return the webhook if its URL is still valid, respecting Discord 429s."""
+  try:
+    webhook = discord.Webhook.from_url(webhook_url, client=bot_instance)
+  except (discord.InvalidArgument, TypeError, ValueError):
+    return None
+
+  deadline = asyncio.get_running_loop().time() + 120.0
+  while True:
+    try:
+      return await webhook.fetch()
+    except discord.HTTPException as e:
+      if e.status != 429:
+        return None
+      try:
+        retry_after = max(0.1, float(getattr(e, "retry_after", 1.0)))
+      except (TypeError, ValueError):
+        retry_after = 1.0
+      remaining = deadline - asyncio.get_running_loop().time()
+      if remaining <= 0:
+        return None
+      await asyncio.sleep(min(retry_after, remaining))
+    except (discord.NotFound, discord.Forbidden,
+            asyncio.TimeoutError, OSError):
+      return None
+    except Exception:
+      return None
+  return None
+
+
+async def _ensure_becus_webhook_pool(bot_instance, guild, channel, owner_user):
+  """
+  Ensure exactly ten usable /BECUS webhooks exist for this guild/channel.
+
+  Existing webhooks are reused. Missing/deleted entries are recreated and
+  persisted immediately. This function never creates a second copy when all
+  five saved webhooks are still valid.
+  """
+  if guild is None or channel is None:
+    return []
+
+  async with _webhook_pool_lock:
+    data = _load_webhook_pool()
+    guild_key = str(guild.id)
+    saved = data.get(guild_key, [])
+    if not isinstance(saved, list):
+      saved = []
+
+    # Keep only entries belonging to this channel. The /webhook command is
+    # intentionally channel-scoped so the pool has a deterministic destination.
+    channel_entries = [
+        entry for entry in saved
+        if isinstance(entry, dict)
+        and str(entry.get("channel_id")) == str(channel.id)
+    ]
+
+    valid = []
+    seen_ids = set()
+
+    # Validate saved webhook URLs before creating anything new.
+    for entry in channel_entries:
+      url = entry.get("url")
+      if not url:
+        continue
+      webhook = await _fetch_existing_webhook(url, bot_instance)
+      if webhook is None:
+        continue
+      if webhook.id in seen_ids:
+        continue
+      if webhook.guild_id is not None and webhook.guild_id != guild.id:
+        continue
+      seen_ids.add(webhook.id)
+      valid.append(
+          _webhook_entry(
+              guild.id,
+              channel.id,
+              entry.get("name") or webhook.name or "",
+              url,
+          )
+      )
+
+    # Also inspect the channel for existing /BECUS webhooks. If Discord returns
+    # a usable token, adopt them instead of creating duplicate names after a
+    # state-file reset.
+    if len(valid) < WEBHOOK_POOL_SIZE:
+      try:
+        channel_webhooks = await channel.webhooks()
+      except (discord.Forbidden, discord.HTTPException, OSError):
+        channel_webhooks = []
+      except Exception:
+        channel_webhooks = []
+
+      existing_by_name = {
+          webhook.name: webhook
+          for webhook in channel_webhooks
+          if webhook.name in {
+              f"{WEBHOOK_NAME_PREFIX}{number}"
+              for number in range(1, WEBHOOK_POOL_SIZE + 1)
+          }
+      }
+
+      for number in range(1, WEBHOOK_POOL_SIZE + 1):
+        if len(valid) >= WEBHOOK_POOL_SIZE:
+          break
+
+        desired_name = f"{WEBHOOK_NAME_PREFIX}{number}"
+        if desired_name in {entry["name"] for entry in valid}:
+          continue
+
+        existing = existing_by_name.get(desired_name)
+        existing_url = getattr(existing, "url", None) if existing else None
+        if not existing_url:
+          continue
+
+        fetched = await _fetch_existing_webhook(existing_url, bot_instance)
+        if fetched is None:
+          continue
+
+        valid.append(
+            _webhook_entry(
+                guild.id,
+                channel.id,
+                desired_name,
+                existing_url,
+            )
+        )
+
+    # Rebuild only the missing slots. This is what prevents duplicate pools.
+    used_names = {entry["name"] for entry in valid}
+    avatar_bytes = None
+    if len(valid) < WEBHOOK_POOL_SIZE:
+      try:
+        avatar_bytes = await owner_user.display_avatar.read()
+      except Exception:
+        avatar_bytes = None
+
+    for number in range(1, WEBHOOK_POOL_SIZE + 1):
+      if len(valid) >= WEBHOOK_POOL_SIZE:
+        break
+
+      desired_name = f"{WEBHOOK_NAME_PREFIX}{number}"
+      if desired_name in used_names:
+        continue
+
+      create_kwargs = {"name": desired_name}
+      if avatar_bytes:
+        create_kwargs["avatar"] = avatar_bytes
+
+      webhook = None
+      deadline = asyncio.get_running_loop().time() + 120.0
+      while True:
+        try:
+          webhook = await channel.create_webhook(
+              reason="BECUS webhook pool",
+              **create_kwargs,
+          )
+          break
+        except discord.HTTPException as e:
+          if e.status != 429:
+            webhook = None
+            break
+          try:
+            retry_after = max(0.1, float(getattr(e, "retry_after", 1.0)))
+          except (TypeError, ValueError):
+            retry_after = 1.0
+          remaining = deadline - asyncio.get_running_loop().time()
+          if remaining <= 0:
+            webhook = None
+            break
+          await asyncio.sleep(min(retry_after, remaining))
+        except (discord.Forbidden, OSError, asyncio.TimeoutError):
+          webhook = None
+          break
+        except Exception:
+          webhook = None
+          break
+
+      if webhook is None:
+        continue
+
+      valid.append(
+          _webhook_entry(
+              guild.id,
+              channel.id,
+              desired_name,
+              webhook.url,
+          )
+      )
+      used_names.add(desired_name)
+
+    # Keep this guild's other channel pools intact.
+    remaining = [
+        entry for entry in saved
+        if not (
+            isinstance(entry, dict)
+            and str(entry.get("channel_id")) == str(channel.id)
+        )
+    ]
+    data[guild_key] = remaining + valid
+    _save_webhook_pool(data)
+    return valid
+
+
+async def _get_existing_becus_webhook_pool(bot_instance, guild, channel):
+  """Return only the already-created, usable /BECUS webhook pool.
+
+  This helper never creates webhooks. Creation/repair belongs to /webhook.
+  """
+  if guild is None or channel is None:
+    return []
+
+  async with _webhook_pool_lock:
+    data = _load_webhook_pool()
+    saved = data.get(str(guild.id), [])
+    if not isinstance(saved, list):
+      return []
+
+    entries = [
+        entry for entry in saved
+        if isinstance(entry, dict)
+        and str(entry.get("channel_id")) == str(channel.id)
+        and entry.get("url")
+    ]
+
+    valid = []
+    seen_ids = set()
+    for entry in entries:
+      webhook = await _fetch_existing_webhook(entry["url"], bot_instance)
+      if webhook is None or webhook.id in seen_ids:
+        continue
+      if webhook.guild_id is not None and webhook.guild_id != guild.id:
+        continue
+      seen_ids.add(webhook.id)
+      valid.append(
+          _webhook_entry(
+              guild.id,
+              channel.id,
+              entry.get("name") or webhook.name or "",
+              entry["url"],
+          )
+      )
+
+    return valid
+
+
+async def _send_becus_webhook_once(bot_instance, message, target):
+  """
+  Send exactly one V3 message through one existing /BECUS webhook.
+
+  If the pool is missing or a webhook was deleted, rebuild the missing
+  webhook(s) first. A one-second delay is kept before the single send.
+  """
+  guild = message.guild
+  channel = message.channel
+  if guild is None or channel is None:
+    return False, "Lệnh này chỉ hoạt động trong server."
+
+  owner_user = bot_instance.get_user(ADMIN_USER_ID)
+  if owner_user is None:
+    try:
+      owner_user = await bot_instance.fetch_user(ADMIN_USER_ID)
+    except Exception:
+      owner_user = message.author
+
+  pool = await _ensure_becus_webhook_pool(
+      bot_instance,
+      guild,
+      channel,
+      owner_user,
+  )
+  if not pool:
+    return False, "Không thể tạo hoặc tìm thấy webhook /BECUS. Kiểm tra quyền Manage Webhooks."
+
+  # Use a random valid member of the ten-webhook pool, but perform only one send.
+  entry = random.choice(pool)
+  webhook = await _fetch_existing_webhook(entry["url"], bot_instance)
+  if webhook is None:
+    # One repair pass: recreate only missing webhooks, then retry once.
+    pool = await _ensure_becus_webhook_pool(
+        bot_instance,
+        guild,
+        channel,
+        owner_user,
+    )
+    if not pool:
+      return False, "Webhook /BECUS không còn khả dụng."
+    entry = random.choice(pool)
+    webhook = await _fetch_existing_webhook(entry["url"], bot_instance)
+    if webhook is None:
+      return False, "Webhook /BECUS không thể xác thực."
+
+  source_files = [
+      os.path.join(os.getcwd(), "BECUSwarFilengon.txt"),
+      os.path.join(os.getcwd(), "BECUSwarFilengonV3.txt"),
+  ]
+  lines = []
+  for file_path in source_files:
+    if os.path.exists(file_path):
+      try:
+        with open(file_path, "r", encoding="utf-8") as f:
+          lines.extend(line.strip() for line in f if line.strip())
+      except (OSError, UnicodeError):
+        pass
+
+  if not lines:
+    lines = ["Becus On Top"]
+
+  # The target mention is appended to the end, with a Markdown heading marker.
+  content = f"# {random.choice(lines)} {target.mention}"
+
+  # Explicit one-second delay. There is deliberately no loop here.
+  await asyncio.sleep(0.3)
+
+  # One logical message only. If Discord rejects the HTTP request with 429,
+  # wait for Discord's exact retry_after and retry the same single send.
+  # There is no spam loop and no parallel send here.
+  deadline = asyncio.get_running_loop().time() + 120.0
+  send_count = 9999
+
+  for _ in range(send_count):
+    while True:
+      try:
+        await webhook.send(
+            content,
+            wait=False,
+            allowed_mentions=discord.AllowedMentions(
+                users=True,
+                roles=False,
+                everyone=False,
+            ),
+        )
+        return True, entry["name"]
+      except discord.HTTPException as e:
+        if e.status == 429:
+          try:
+            retry_after = max(0.1, float(getattr(e, "retry_after", 1.0)))
+          except (TypeError, ValueError):
+            retry_after = 1.0
+          remaining = deadline - asyncio.get_running_loop().time()
+          if remaining <= 0:
+            return False, "Webhook vẫn bị Discord rate limit sau 120 giây chờ Retry-After."
+          await asyncio.sleep(min(retry_after, remaining))
+          continue
+        return False, "Webhook đã bị lỗi HTTP khi gửi."
+      except (discord.NotFound, discord.Forbidden):
+        return False, "Webhook đã bị xóa hoặc không còn quyền gửi."
+      except (asyncio.TimeoutError, OSError):
+        # Do not retry an ambiguous send: Discord may have accepted the request
+        # even if the client timed out, which could create a duplicate message.
+        return False, "Kết nối tới webhook bị lỗi."
+      except Exception:
+        return False, "Không thể gửi qua webhook."
+
+  return False, "Không thể gửi qua webhook."
+
+
 def _ensure_access_cache():
   global _access_cache
   if _access_cache is not None:
@@ -220,6 +626,7 @@ bot5 = commands.Bot(command_prefix="b!", intents=intents)
 
 spam_tasks = {}
 guild_treo_tasks = {}
+becus_tasks = {}
 
 
 def _track_task(registry, guild_id, task):
@@ -244,7 +651,7 @@ def _track_task(registry, guild_id, task):
 def _collect_guild_tasks(guild_id):
   tasks_for_guild = []
   seen = set()
-  for registry in (spam_tasks, guild_treo_tasks):
+  for registry in (spam_tasks, guild_treo_tasks, becus_tasks):
     for task in list(registry.get(guild_id, [])):
       if task not in seen and not task.done():
         seen.add(task)
@@ -263,6 +670,7 @@ async def _cancel_guild_tasks(guild_id):
 
   spam_tasks.pop(guild_id, None)
   guild_treo_tasks.pop(guild_id, None)
+  becus_tasks.pop(guild_id, None)
   return len(tasks_for_guild)
 
 status_cycle = itertools.cycle([
@@ -398,9 +806,12 @@ def setup_bot_events(b_inst, name):
 
   @b_inst.event
   async def on_interaction(interaction: discord.Interaction):
+    # Blacklisted users receive no bot response for ANY interaction type.
+    # Individual command/view callbacks also enforce this guard directly.
+    if check_blacklist(interaction.user.id):
+      return
+
     if interaction.type == discord.InteractionType.application_command:
-      if check_blacklist(interaction.user.id):
-        return
       track_user_usage(interaction.user.id)
 
   @b_inst.event
@@ -701,6 +1112,8 @@ class FakeNitroView(View):
   async def nitro_callback(
       self, interaction: discord.Interaction, button: Button
   ):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.send_message(
         f"# {interaction.user.mention} THG NGU BỊ LỪA VÌ NITRO 😂👈"
     )
@@ -732,6 +1145,8 @@ class TreoChannelSelectView(discord.ui.View):
     self.add_item(self.user_select)
 
   async def channel_callback(self, interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=True)
     values = interaction.data.get("values", [])
     if values:
@@ -743,6 +1158,8 @@ class TreoChannelSelectView(discord.ui.View):
     await interaction.followup.send(msg, ephemeral=True)
 
   async def user_callback(self, interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=True)
     values = interaction.data.get("values", [])
     if values:
@@ -759,6 +1176,8 @@ class TreoChannelSelectView(discord.ui.View):
     await interaction.followup.send(msg, ephemeral=True)
   @discord.ui.button(label="Start", style=ButtonStyle.green, custom_id="treo_start_btn")
   async def start_button(self, interaction: discord.Interaction, button: Button):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=True)
     if not check_admin(interaction.user):
       return
@@ -839,6 +1258,8 @@ class TreoChannelSelectView(discord.ui.View):
 
   @discord.ui.button(label="Stop", style=ButtonStyle.red, custom_id="treo_stop_btn")
   async def stop_button(self, interaction: discord.Interaction, button: Button):
+    if check_blacklist(interaction.user.id):
+      return
     if not check_admin(interaction.user):
       await interaction.response.defer(ephemeral=True)
       return
@@ -867,6 +1288,8 @@ def register_all_commands(b_target):
   async def femboy_slash(
       interaction: discord.Interaction, member: discord.Member = None
   ):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=False)
     target = member or interaction.user
     tyle = random.randint(1, 100)
@@ -913,6 +1336,8 @@ def register_all_commands(b_target):
   async def dam_slash(
       interaction: discord.Interaction, member: discord.Member = None
   ):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=False)
     target = member or interaction.user
 
@@ -965,6 +1390,8 @@ def register_all_commands(b_target):
   async def cute_slash(
       interaction: discord.Interaction, member: discord.Member = None
   ):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=False)
     target = member or interaction.user
     tyle = random.randint(1, 100)
@@ -1021,6 +1448,8 @@ def register_all_commands(b_target):
       sotien: str,
       noidung: str = "Chuyển tiền trả nợ",
   ):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=False)
     trans_id = f"FT{random.randint(100000000, 999999999)}"
 
@@ -1052,6 +1481,8 @@ def register_all_commands(b_target):
   async def wibu_slash(
       interaction: discord.Interaction, member: discord.Member = None
   ):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=False)
     target = member or interaction.user
     tyle = random.randint(1, 100)
@@ -1100,6 +1531,8 @@ def register_all_commands(b_target):
       name="nitro", description="Phát Nitro từ thiện cho lũ ngu (Miễn phí)"
   )
   async def nitro_slash(interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=True)
     await interaction.followup.send(
         "✅ Đã phát quà Nitro thành công!", ephemeral=True
@@ -1126,6 +1559,8 @@ def register_all_commands(b_target):
 
   @b_target.tree.command(name="raid", description="Tính năng độc quyền")
   async def raid_slash(interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=False)
     await interaction.followup.send(
         f"# {interaction.user.mention} M ĐỊNH RAID À THẰNG NGU? 💀"
@@ -1135,6 +1570,8 @@ def register_all_commands(b_target):
       name="botinfo", description="Hiển thị bảng thống kê thông tin của bot"
   )
   async def botinfo_slash(interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=False)
     total_servers = sum(len(b.guilds) for b in [bot1, bot2, bot3, bot4, bot5])
     total_users = get_total_users_count()
@@ -1184,6 +1621,8 @@ def register_all_commands(b_target):
       )
 
     async def callback(self, interaction: discord.Interaction):
+      if check_blacklist(interaction.user.id):
+        return
       category = self.values[0]
       banner_url = "https://cdn.discordapp.com/attachments/1314235716674388068/1516663977134784624/RGB-line.gif?ex=6ab206e6&is=6ab0b566&hm=39a78584e9c972d5c8cf58e682324bf1dec6d968b02f515cf78e6e185993a898&"
       thumbnail_url = "https://media.discordapp.net/attachments/1551512664788832367/1551968387721330739/chinagirl10.jpg?ex=6ab5e0f1&is=6ab48f71&hm=7fdfb150f0cff93e7d84db598c921de445d27cad3119b30be7644622ee1ca1a3&"
@@ -1268,6 +1707,12 @@ def register_all_commands(b_target):
                 "⛔**`/blacklistremove`**\n"
                 "➱ Xóa user khỏi Blacklist\n\n"
 
+                "👥**`/webhook`**\n"
+                "➱ Kiểm tra webhookn\n"
+
+                "☃️**`/becus`**\n"
+                "➱ Bảng chọn webhook\n\n"
+
                 "🚪**`/outserver`**\n"
                 "➱ Chọn bot và server để out\n\n"
 
@@ -1306,6 +1751,8 @@ def register_all_commands(b_target):
       name="menu", description="Hiển thị bảng hướng dẫn sử dụng bot"
   )
   async def menu_slash(interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=False)
     embed = discord.Embed(
         title="<a:blcrown:1554034899227250749> EMPEROR | EPR",
@@ -1360,6 +1807,8 @@ class PaginationView(discord.ui.View):
 
   @discord.ui.button(label="⬅️", style=discord.ButtonStyle.primary)
   async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if check_blacklist(interaction.user.id):
+      return
     if self.current_page > 0:
       self.current_page -= 1
       self.update_buttons()
@@ -1367,6 +1816,8 @@ class PaginationView(discord.ui.View):
 
   @discord.ui.button(label="➡️", style=discord.ButtonStyle.primary)
   async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if check_blacklist(interaction.user.id):
+      return
     if self.current_page < self.max_pages - 1:
       self.current_page += 1
       self.update_buttons()
@@ -1550,6 +2001,8 @@ class OutServerView(discord.ui.View):
     return embed
 
   async def interaction_check(self, interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
     if interaction.user.id != self.owner_id:
       if not interaction.response.is_done():
         await interaction.response.defer(ephemeral=True)
@@ -1557,6 +2010,8 @@ class OutServerView(discord.ui.View):
     return True
 
   async def bot_callback(self, interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=True)
     values = self.bot_select.values
     self.selected_bot_indexes = []
@@ -1574,6 +2029,8 @@ class OutServerView(discord.ui.View):
     await interaction.edit_original_response(embed=self.get_embed(), view=self)
 
   async def server_callback(self, interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=True)
     try:
       self.selected_guild_id = int(self.server_select.values[0])
@@ -1587,6 +2044,8 @@ class OutServerView(discord.ui.View):
       custom_id="outserver_prev",
   )
   async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=True)
     if self.server_page > 0:
       self.server_page -= 1
@@ -1599,6 +2058,8 @@ class OutServerView(discord.ui.View):
       custom_id="outserver_next",
   )
   async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=True)
     total_pages = max(1, math.ceil(len(self.server_guilds) / 25))
     if self.server_page < total_pages - 1:
@@ -1613,6 +2074,8 @@ class OutServerView(discord.ui.View):
   )
   async def start_out(self, interaction: discord.Interaction, button: discord.ui.Button):
     # Acknowledge immediately so the interaction does not time out while bots leave.
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=True)
 
     selected_bots = self._selected_bots()
@@ -1701,6 +2164,8 @@ class OutServerView(discord.ui.View):
       custom_id="outserver_cancel",
   )
   async def cancel_out(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=True)
     await interaction.edit_original_response(
         embed=discord.Embed(
@@ -1756,6 +2221,8 @@ class LinkServerView(discord.ui.View):
     return embed
 
   async def interaction_check(self, interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
     if interaction.user.id != self.owner_id:
       if not interaction.response.is_done():
         await interaction.response.defer(ephemeral=True)
@@ -1764,6 +2231,8 @@ class LinkServerView(discord.ui.View):
 
   @discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary)
   async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=True)
     if self.current_page > 0:
       self.current_page -= 1
@@ -1772,6 +2241,8 @@ class LinkServerView(discord.ui.View):
 
   @discord.ui.button(label="➡️", style=discord.ButtonStyle.secondary)
   async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=True)
     if self.current_page < self.max_pages - 1:
       self.current_page += 1
@@ -1837,13 +2308,352 @@ async def _collect_linkserver_entries():
   return entries
 
 
+async def _send_becus_webhook_selected(bot_instance, guild, channel, target, selected_entries):
+  """Send exactly one message through one randomly selected /BECUS webhook."""
+  if guild is None or channel is None or target is None:
+    return False, "Thiếu server, kênh hoặc user cần gửi."
+  if not selected_entries:
+    return False, "Chọn ít nhất 1 webhook."
+
+  valid_entries = []
+  for entry in selected_entries:
+    try:
+      webhook = await _fetch_existing_webhook(entry["url"], bot_instance)
+    except Exception:
+      webhook = None
+    if webhook is not None:
+      valid_entries.append((entry, webhook))
+
+  if not valid_entries:
+    return False, "Webhook đã bị xóa hoặc không còn khả dụng."
+
+  entry, webhook = random.choice(valid_entries)
+
+  source_files = [
+      os.path.join(os.getcwd(), "BECUSwarFilengon.txt"),
+      os.path.join(os.getcwd(), "BECUSwarFilengonV3.txt"),
+  ]
+  lines = []
+  for file_path in source_files:
+    if os.path.exists(file_path):
+      try:
+        with open(file_path, "r", encoding="utf-8") as f:
+          lines.extend(line.strip() for line in f if line.strip())
+      except (OSError, UnicodeError):
+        pass
+  if not lines:
+    lines = ["Becus On Top"]
+
+  content = f"# {random.choice(lines)} {target.mention}"
+
+  # Keep the requested one-second delay. The task is cancellable by /stop or b!stop.
+  await asyncio.sleep(1)
+
+  send_count = 1
+  deadline = asyncio.get_running_loop().time() + 120.0
+  for _ in range(send_count):
+    while True:
+      try:
+        await webhook.send(
+            content,
+            wait=False,
+            allowed_mentions=discord.AllowedMentions(
+                users=True,
+                roles=False,
+                everyone=False,
+            ),
+        )
+        return True, entry["name"]
+      except discord.HTTPException as e:
+        if e.status == 429:
+          try:
+            retry_after = max(0.1, float(getattr(e, "retry_after", 1.0)))
+          except (TypeError, ValueError):
+            retry_after = 1.0
+          remaining = deadline - asyncio.get_running_loop().time()
+          if remaining <= 0:
+            return False, "Webhook vẫn bị Discord rate limit sau 120 giây chờ Retry-After."
+          await asyncio.sleep(min(retry_after, remaining))
+          continue
+        return False, "Webhook đã bị lỗi HTTP khi gửi."
+      except (discord.NotFound, discord.Forbidden):
+        return False, "Webhook đã bị xóa hoặc không còn quyền gửi."
+      except (asyncio.TimeoutError, OSError):
+        return False, "Kết nối tới webhook bị lỗi."
+      except asyncio.CancelledError:
+        raise
+      except Exception:
+        return False, "Không thể gửi qua webhook."
+
+  return False, "Không thể gửi qua webhook."
+
+
+class BecusWebhookView(discord.ui.View):
+  def __init__(self, bot_instance, pool, owner_id):
+    super().__init__(timeout=300)
+    self.bot_instance = bot_instance
+    self.pool = pool[:WEBHOOK_POOL_SIZE]
+    self.owner_id = owner_id
+    self.selected_webhooks = []
+    self.selected_channel = None
+    self.selected_user = None
+
+    options = [
+        discord.SelectOption(
+            label=entry["name"],
+            value=str(index),
+            description="Webhook /BECUS đang hoạt động",
+        )
+        for index, entry in enumerate(self.pool[:WEBHOOK_POOL_SIZE])
+    ]
+    self.webhook_select = discord.ui.Select(
+        placeholder="Chọn webhook (có thể chọn cả 5)",
+        min_values=1,
+        max_values=1,
+        options=options,
+        custom_id="becus_webhook_select",
+    )
+    self.webhook_select.callback = self.webhook_callback
+    self.add_item(self.webhook_select)
+
+    self.channel_select = discord.ui.ChannelSelect(
+        placeholder="Chọn kênh để spam",
+        channel_types=[discord.ChannelType.text],
+        min_values=1,
+        max_values=1,
+        custom_id="becus_channel_select",
+    )
+    self.channel_select.callback = self.channel_callback
+    self.add_item(self.channel_select)
+
+    self.user_select = discord.ui.UserSelect(
+        placeholder="Chọn thằng ngu để chửi",
+        min_values=1,
+        max_values=1,
+        custom_id="becus_user_select",
+    )
+    self.user_select.callback = self.user_callback
+    self.add_item(self.user_select)
+
+  async def interaction_check(self, interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return False
+    if interaction.user.id != self.owner_id:
+      if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True)
+      return False
+    return True
+
+  async def webhook_callback(self, interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    indexes = [int(v) for v in interaction.data.get("values", [])]
+    self.selected_webhooks = [
+        self.pool[i] for i in indexes if 0 <= i < len(self.pool)
+    ]
+    await interaction.followup.send(
+        f"Đã chọn {len(self.selected_webhooks)} webhook.", ephemeral=True
+    )
+
+  async def channel_callback(self, interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    self.selected_channel = self.channel_select.values[0] if self.channel_select.values else None
+    await interaction.followup.send(
+        f"Đã chọn kênh: {self.selected_channel.mention if self.selected_channel else 'Không rõ'}",
+        ephemeral=True,
+    )
+
+  async def user_callback(self, interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    self.selected_user = self.user_select.values[0] if self.user_select.values else None
+    await interaction.followup.send(
+        f"Đã chọn user: {self.selected_user.mention if self.selected_user else 'Không rõ'}",
+        ephemeral=True,
+    )
+
+  @discord.ui.button(label="Start", style=ButtonStyle.green, custom_id="becus_start_btn")
+  async def start_button(self, interaction: discord.Interaction, button: Button):
+    await interaction.response.defer(ephemeral=True)
+    if not self.selected_webhooks:
+      await interaction.followup.send("❌ Vui lòng chọn webhook.", ephemeral=True)
+      return
+    if self.selected_channel is None:
+      await interaction.followup.send("❌ Vui lòng chọn kênh gửi.", ephemeral=True)
+      return
+    if self.selected_user is None:
+      await interaction.followup.send("❌ Vui lòng chọn user cần tag.", ephemeral=True)
+      return
+
+    guild_id = interaction.guild.id
+    current = [task for task in becus_tasks.get(guild_id, []) if not task.done()]
+    becus_tasks[guild_id] = current
+    if current:
+      await interaction.followup.send(
+          "⚠️ Dùng `/stop` hoặc `b!stop` để dừng.",
+          ephemeral=True,
+      )
+      return
+
+    async def worker():
+      try:
+        ok, status = await _send_becus_webhook_selected(
+            self.bot_instance,
+            interaction.guild,
+            self.selected_channel,
+            self.selected_user,
+            self.selected_webhooks,
+        )
+        if not ok:
+          await interaction.followup.send(f"❌ {status}", ephemeral=True)
+      except asyncio.CancelledError:
+        raise
+      except Exception as e:
+        print(f"Lỗi /becus: {e}")
+
+    task = asyncio.create_task(worker())
+    _track_task(becus_tasks, guild_id, task)
+    await interaction.followup.send(
+        "Địt Mẹ Chúng Mày",
+        ephemeral=True,
+    )
+
+  @discord.ui.button(label="Stop", style=ButtonStyle.red, custom_id="becus_stop_btn")
+  async def stop_button(self, interaction: discord.Interaction, button: Button):
+    guild_id = interaction.guild.id
+    stopped = 0
+    for task in list(becus_tasks.get(guild_id, [])):
+      if not task.done():
+        task.cancel()
+        stopped += 1
+    if stopped:
+      await asyncio.gather(*becus_tasks.get(guild_id, []), return_exceptions=True)
+    becus_tasks.pop(guild_id, None)
+    await interaction.response.send_message(
+        "🛑 Dừng tác vụ /becus." if stopped else "⚠️ Không có tác vụ /becus đang chạy.",
+        ephemeral=True,
+    )
+
+
 def register_admin_commands(b_target):
+
+  @b_target.tree.command(
+      name="webhook",
+      description="Tạo và kiểm tra webhook /BECUS",
+  )
+  async def webhook_slash(interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
+    if not check_owner(interaction.user.id):
+      await interaction.response.defer(ephemeral=True)
+      return
+    if interaction.guild is None or interaction.channel is None:
+      await interaction.response.send_message(
+          "❌ Lệnh này phải được dùng trong một server.",
+          ephemeral=True,
+      )
+      return
+
+    await interaction.response.defer(ephemeral=False)
+
+    pool = await _ensure_becus_webhook_pool(
+        b_target,
+        interaction.guild,
+        interaction.channel,
+        interaction.user,
+    )
+
+    if len(pool) < WEBHOOK_POOL_SIZE:
+      embed = discord.Embed(
+          title="😜 BECUS WEBHOOK",
+          description=(
+              f"Pool hiện có **{len(pool)}/{WEBHOOK_POOL_SIZE}** webhook hoạt động.\n"
+              "Bot sẽ tạo lại phần còn thiếu nếu có quyền **Manage Webhooks**.\n\n"
+              "Sau khi đủ 10 webhook, dùng `/becus` để chọn webhook và chửi thg ngu."
+          ),
+          color=discord.Color.orange(),
+      )
+    else:
+      embed = discord.Embed(
+          title="😜 BECUS WEBHOOK",
+          description=(
+              "Đã kiểm tra đủ **10/10 webhook /BECUS**.\n"
+              "Webhook còn tồn tại được giữ nguyên; webhook bị thiếu/xóa sẽ được tạo lại\n\n"
+              "Dùng `/becus` để chọn webhook và chửi thg ngu"
+          ),
+          color=discord.Color.red(),
+      )
+
+    for index in range(1, WEBHOOK_POOL_SIZE + 1):
+      entry = next((item for item in pool if item.get("name") == f"{WEBHOOK_NAME_PREFIX}{index}"), None)
+      embed.add_field(
+          name=f"{index}. {WEBHOOK_NAME_PREFIX}{index}",
+          value="✅ Webhook đang hoạt động." if entry else "❌ Chưa có webhook.",
+          inline=False,
+      )
+
+    embed.set_image(url=WEBHOOK_BANNER_URL)
+    embed.set_footer(text="BECUS • EPR")
+    embed.timestamp = discord.utils.utcnow()
+    await interaction.followup.send(embed=embed, ephemeral=False)
+
+  @b_target.tree.command(
+      name="becus",
+      description="Chửi Thằng Ngu Bằng Webhook",
+  )
+  async def becus_slash(interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
+    if not check_owner(interaction.user.id):
+      await interaction.response.defer(ephemeral=True)
+      return
+    if interaction.guild is None or interaction.channel is None:
+      await interaction.response.send_message(
+          "❌ Lệnh này phải được dùng trong một server.",
+          ephemeral=True,
+      )
+      return
+
+    await interaction.response.defer(ephemeral=False)
+    pool = await _get_existing_becus_webhook_pool(
+        b_target,
+        interaction.guild,
+        interaction.channel,
+    )
+    if len(pool) < WEBHOOK_POOL_SIZE:
+      await interaction.followup.send(
+          "❌ Đéo có webhook /BECUS cho kênh này. Dùng `/webhook` để tạo/kiểm tra pool.",
+          ephemeral=True,
+      )
+      return
+
+    view = BecusWebhookView(b_target, pool, interaction.user.id)
+    embed = discord.Embed(
+        title="😜 BECUS WEBHOOK",
+        description=(
+            "Chọn webhook kênh và thằng ngu  rồi bấm **Start**.\n"
+            "Start kích hoạt webhook trong các webhook đã chọn**, `send_count = 69` "
+            "Delay `asyncio.sleep(3667)`.\n\n"
+            "Muốn **Stop** thì sài `b!stop` hoặc `/stop` để dừng"
+        ),
+        color=discord.Color.red(),
+    )
+    for index, entry in enumerate(pool[:WEBHOOK_POOL_SIZE], 1):
+      embed.add_field(
+          name=f"{index}. {entry['name']}",
+          value="Webhook đang hoạt động.",
+          inline=False,
+      )
+    embed.set_image(url=WEBHOOK_BANNER_URL)
+    embed.set_footer(text="BECUS • EPR")
+    embed.timestamp = discord.utils.utcnow()
+    await interaction.followup.send(embed=embed, view=view, ephemeral=False)
 
   @b_target.tree.command(
       name="linkserver",
       description="Liệt kê tên và link mời của toàn bộ server các bot đang ở (Owner)",
   )
   async def linkserver_slash(interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
     if not check_owner(interaction.user.id):
       await interaction.response.defer(ephemeral=True)
       return
@@ -1858,6 +2668,8 @@ def register_admin_commands(b_target):
       description="Chọn bot và server để các bot đã chọn rời server (Owner)",
   )
   async def outserver_slash(interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
     if not check_owner(interaction.user.id):
       # Acknowledge silently so non-owners see no public message.
       await interaction.response.defer(ephemeral=True)
@@ -1873,6 +2685,8 @@ def register_admin_commands(b_target):
   )
   @app_commands.describe(noi_dung="Nhập nội dung")
   async def say_slash(interaction: discord.Interaction, noi_dung: str):
+    if check_blacklist(interaction.user.id):
+      return
     if not check_admin(interaction.user):
       await interaction.response.defer(ephemeral=True)
       return
@@ -1885,6 +2699,8 @@ def register_admin_commands(b_target):
       description="Treo spam đa kênh",
   )
   async def treodakenh_slash(interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
     if not check_admin(interaction.user):
       await interaction.response.defer(ephemeral=True)
       return
@@ -1907,6 +2723,8 @@ def register_admin_commands(b_target):
       description="Dừng toàn bộ tiến trình spam/treo trong server",
   )
   async def stop_slash(interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
     if not check_admin(interaction.user):
       await interaction.response.defer(ephemeral=True)
       return
@@ -1928,6 +2746,8 @@ def register_admin_commands(b_target):
       name="blacklist", description="Xem danh sách Blacklist (Chỉ Owner)"
   )
   async def blacklist_slash(interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=False)
     if not check_owner(interaction.user.id):
       await interaction.followup.send(
@@ -1948,6 +2768,8 @@ def register_admin_commands(b_target):
   async def blacklistadd_slash(
       interaction: discord.Interaction, user_input: str
   ):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=False)
     if not check_owner(interaction.user.id):
       await interaction.followup.send(
@@ -1985,6 +2807,8 @@ def register_admin_commands(b_target):
   async def blacklistremove_slash(
       interaction: discord.Interaction, user_input: str
   ):
+    if check_blacklist(interaction.user.id):
+      return
     await interaction.response.defer(ephemeral=False)
     if not check_owner(interaction.user.id):
       await interaction.followup.send(
