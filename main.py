@@ -1699,25 +1699,25 @@ def register_all_commands(b_target):
             name="Lệnh Quản Lý",
             value=(
                 "⚫**`/blacklist`**\n"
-                "➱ Xem danh sách Blacklist\n\n"
+                "<a:arrow2:1554884049531834519> Xem danh sách Blacklist <a:vdll:1555926885488132177>\n\n"
 
                 "✅**`/blacklistadd`**\n"
-                "➱ Thêm user vào Blacklist\n\n"
+                "<a:arrow2:1554884049531834519> Thêm user vào Blacklist <a:vdll:1555926885488132177>\n\n"
 
                 "⛔**`/blacklistremove`**\n"
-                "➱ Xóa user khỏi Blacklist\n\n"
+                "<a:arrow2:1554884049531834519> Xóa user khỏi Blacklist <a:vdll:1555926885488132177>\n\n"
 
                 "👥**`/webhook`**\n"
-                "➱ Kiểm tra webhookn\n"
+                "<a:arrow2:1554884049531834519> Kiểm tra webhook <a:vdll:1555926885488132177>\n\n"
 
-                "☃️**`/becus`**\n"
-                "➱ Bảng chọn webhook\n\n"
+                "👁️‍🗨️**`/becus`**\n"
+                "<a:arrow2:1554884049531834519> Bảng chọn webhook <a:vdll:1555926885488132177>\n\n"
 
                 "🚪**`/outserver`**\n"
-                "➱ Chọn bot và server để out\n\n"
+                "<a:arrow2:1554884049531834519> Chọn bot và server để out <a:vdll:1555926885488132177>\n\n"
 
                 "🔗**`/linkserver`**\n"
-                "➱ Liệt kê tên toàn bộ server của bot đang hoạt động"
+                "<a:arrow2:1554884049531834519> Liệt kê tên toàn bộ server của bot đang hoạt động"
             ),
             inline=False,
         )
