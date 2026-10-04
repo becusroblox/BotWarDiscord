@@ -646,7 +646,7 @@ async def before_change_status():
   await bot1.wait_until_ready()
 
 
-async def raw_send_message(bot_inst, channel_id, content):
+async def raw_send_message(bot_inst, channel_id, content, max_retries=5):
   channel = bot_inst.get_channel(channel_id)
   if channel is None:
     try:
@@ -655,7 +655,7 @@ async def raw_send_message(bot_inst, channel_id, content):
             asyncio.TimeoutError, OSError):
       return False
 
-  for attempt in range(3):
+  for attempt in range(max_retries):
     try:
       await channel.send(content)
       return True
@@ -664,22 +664,24 @@ async def raw_send_message(bot_inst, channel_id, content):
     except discord.HTTPException as e:
       if e.status == 429:
         try:
-          retry_after = max(0.1, float(getattr(e, "retry_after", 1.0)))
+          retry_after = max(0.5, float(getattr(e, "retry_after", 1.0)))
         except (TypeError, ValueError):
           retry_after = 1.0
-        if attempt < 2:
-          await asyncio.sleep(retry_after)
-          continue
-      elif attempt < 2:
-        await asyncio.sleep(1)
+        backoff = min(retry_after * (2 ** attempt), 30.0)
+        await asyncio.sleep(backoff + random.uniform(0.1, 0.5))
+        continue
+      elif e.status >= 500:
+        await asyncio.sleep(min(2 ** attempt, 10))
+        continue
+      else:
+        return False
     except (discord.NotFound, discord.Forbidden):
       return False
     except (asyncio.TimeoutError, OSError):
-      if attempt < 2:
-        await asyncio.sleep(1)
+      await asyncio.sleep(min(2 ** attempt, 5))
+      continue
     except Exception:
-      if attempt < 2:
-        await asyncio.sleep(1)
+      await asyncio.sleep(1)
   return False
 def setup_bot_events(b_inst, name):
 
@@ -947,24 +949,30 @@ def setup_bot_events(b_inst, name):
         if is_infinite:
           while True:
             try:
-              cau_txt = random.choice(cau_texts)
-              noi_dung = f"> # {cau_txt} {target.mention}"
-              await raw_send_message(b_inst, message.channel.id, noi_dung)
-              await asyncio.sleep(1)
-            except asyncio.CancelledError:
-              break
-            except Exception:
-              await asyncio.sleep(1)
-        else:
-          try:
-            for i in range(so_luong):
-              try:
+              burst = random.randint(8, 15)
+              for _ in range(burst):
                 cau_txt = random.choice(cau_texts)
                 noi_dung = f"> # {cau_txt} {target.mention}"
                 await raw_send_message(b_inst, message.channel.id, noi_dung)
-                await asyncio.sleep(1)
-              except Exception:
-                await asyncio.sleep(1)
+                await asyncio.sleep(random.uniform(0.1, 0.3))
+              await asyncio.sleep(random.uniform(2, 4))
+            except asyncio.CancelledError:
+              break
+            except Exception:
+              await asyncio.sleep(2)
+        else:
+          sent = 0
+          try:
+            while sent < so_luong:
+              burst = min(random.randint(8, 15), so_luong - sent)
+              for _ in range(burst):
+                cau_txt = random.choice(cau_texts)
+                noi_dung = f"> # {cau_txt} {target.mention}"
+                await raw_send_message(b_inst, message.channel.id, noi_dung)
+                await asyncio.sleep(random.uniform(0.1, 0.3))
+                sent += 1
+              if sent < so_luong:
+                await asyncio.sleep(random.uniform(2, 4))
           except asyncio.CancelledError:
             pass
           except Exception:
@@ -1003,13 +1011,16 @@ def setup_bot_events(b_inst, name):
       guild_id = message.guild.id
 
       async def noidung_worker():
+        sent = 0
         try:
-          for i in range(so_luong):
-            try:
+          while sent < so_luong:
+            burst = min(random.randint(8, 15), so_luong - sent)
+            for _ in range(burst):
               await raw_send_message(b_inst, message.channel.id, spam_content)
-              await asyncio.sleep(1)
-            except Exception:
-              await asyncio.sleep(1)
+              await asyncio.sleep(random.uniform(0.1, 0.3))
+              sent += 1
+            if sent < so_luong:
+              await asyncio.sleep(random.uniform(2, 4))
         except asyncio.CancelledError:
           pass
         except Exception:
@@ -1168,27 +1179,32 @@ class TreoChannelSelectView(discord.ui.View):
       return
 
     async def treo_worker(bot_inst):
-      async def spam_channel(ch_id):
-        file_cycle = itertools.cycle([0, 1, 2])
-        while True:
-          f_idx = next(file_cycle)
-          lines = file_contents[f_idx]
-          text = random.choice(lines)
-          try:
-            if target:
-              noi_dung = f"> # {text} {target.mention}"
-            else:
-              noi_dung = f"> # {text}"
-            await raw_send_message(bot_inst, ch_id, noi_dung)
-            await asyncio.sleep(1)
-          except Exception:
-            await asyncio.sleep(1)
+        async def spam_channel(ch_id):
+          file_cycle = itertools.cycle([0, 1, 2])
+          while True:
+            try:
+              burst = random.randint(8, 15)
+              for _ in range(burst):
+                f_idx = next(file_cycle)
+                lines = file_contents[f_idx]
+                text = random.choice(lines)
+                if target:
+                  noi_dung = f"> # {text} {target.mention}"
+                else:
+                  noi_dung = f"> # {text}"
+                await raw_send_message(bot_inst, ch_id, noi_dung)
+                await asyncio.sleep(random.uniform(0.1, 0.3))
+              await asyncio.sleep(random.uniform(2, 4))
+            except asyncio.CancelledError:
+              return
+            except Exception:
+              await asyncio.sleep(2)
 
-      channel_tasks = [spam_channel(ch_id) for ch_id in channel_ids]
-      try:
-        await asyncio.gather(*channel_tasks)
-      except asyncio.CancelledError:
-        pass
+        channel_tasks = [spam_channel(ch_id) for ch_id in channel_ids]
+        try:
+          await asyncio.gather(*channel_tasks)
+        except asyncio.CancelledError:
+          pass
 
     for b_inst in active_bots:
       task = asyncio.create_task(treo_worker(b_inst))
