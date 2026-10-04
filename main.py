@@ -14,8 +14,10 @@ TERMUX_HOME_DIR = "/data/data/com.termux/files/home"
 if os.path.exists(TERMUX_HOME_DIR):
   os.chdir(TERMUX_HOME_DIR)
 
-ACCESS_FILE = "access_control.json"
-USERS_TRACK_FILE = "used_users.json"
+DATA_DIR = os.getenv("DATA_DIR", "/data")
+os.makedirs(DATA_DIR, exist_ok=True)
+ACCESS_FILE = os.path.join(DATA_DIR, "access_control.json")
+USERS_TRACK_FILE = os.path.join(DATA_DIR, "used_users.json")
 
 
 def track_user_usage(user_id):
