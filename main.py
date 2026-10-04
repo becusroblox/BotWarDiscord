@@ -2241,77 +2241,129 @@ async def _collect_linkserver_entries():
   return entries
 
 
+# ---------------------------------------------------------------------------
+# Global semaphore — giới hạn số webhook gửi cùng lúc để đéo bị rate limit IP
+# ---------------------------------------------------------------------------
+_becus_send_semaphore = asyncio.Semaphore(5)
+
+
 async def _run_single_webhook_loop(bot_instance, entry, channel, targets):
-  """Chạy vòng lặp vô hạn cho 1 webhook riêng biệt song song, giữ nguyên bắt lỗi Rate Limit."""
-  try:
-    webhook = await _fetch_existing_webhook(entry["url"], bot_instance)
-  except Exception:
-    webhook = None
+  """
+  Vòng lặp vô hạn cho 1 webhook, chạy song song với các webhook khác.
 
-  if webhook is None:
-    return
+  Đặc điểm:
+  - Cache nội dung file 1 lần, đéo đọc disk mỗi vòng lặp.
+  - Retry fetch webhook 5 lần nếu fail ban đầu.
+  - Retry vô hạn khi gặp 429 — đéo bao giờ break vì rate limit.
+  - Log mọi action để dễ debug trên Railway.
+  - Delay jitter 0.5-1.2s để tránh pattern đều đặn.
+  - Semaphore giới hạn 5 webhook gửi cùng lúc, tránh rate limit per-IP.
+  """
+  webhook_name = entry.get("name", "?")
 
+  # --- 1. Cache nội dung file 1 lần duy nhất ------------------------------
   source_files = [
       os.path.join(os.getcwd(), "BECUSwarFilengon.txt"),
       os.path.join(os.getcwd(), "BECUSwarFilengonV3.txt"),
   ]
+  lines = []
+  for file_path in source_files:
+    if os.path.exists(file_path):
+      try:
+        with open(file_path, "r", encoding="utf-8") as f:
+          lines.extend(line.strip() for line in f if line.strip())
+      except (OSError, UnicodeError):
+        pass
+  if not lines:
+    lines = ["Becus On Top"]
 
   mentions_str = " ".join(t.mention for t in targets if t)
 
+  # --- 2. Retry fetch webhook — đéo bỏ cuộc ngay --------------------------
+  webhook = None
+  for attempt in range(5):
+    try:
+      webhook = await _fetch_existing_webhook(entry["url"], bot_instance)
+      if webhook is not None:
+        break
+    except Exception:
+      pass
+    await asyncio.sleep(2 ** attempt)
+
+  if webhook is None:
+    print(f"[BECUS] {webhook_name} fetch fail sau 5 lần — bỏ qua")
+    return
+
+  print(f"[BECUS] {webhook_name} bắt đầu vòng lặp")
+
+  # --- 3. Vòng lặp vô hạn — đéo break vì rate limit -----------------------
   while True:
     try:
-      lines = []
-      for file_path in source_files:
-        if os.path.exists(file_path):
-          try:
-            with open(file_path, "r", encoding="utf-8") as f:
-              lines.extend(line.strip() for line in f if line.strip())
-          except (OSError, UnicodeError):
-            pass
-      if not lines:
-        lines = ["Becus On Top"]
-
       content = f"# {random.choice(lines)} {mentions_str}"
 
-      deadline = asyncio.get_running_loop().time() + 120.0
+      # Gửi với retry vô hạn khi 429
       while True:
         try:
-          await webhook.send(
-              content,
-              wait=False,
-              allowed_mentions=discord.AllowedMentions(
-                  users=True,
-                  roles=False,
-                  everyone=False,
-              ),
-          )
-          break
+          async with _becus_send_semaphore:
+            await webhook.send(
+                content,
+                wait=False,
+                allowed_mentions=discord.AllowedMentions(
+                    users=True,
+                    roles=False,
+                    everyone=False,
+                ),
+            )
+          break  # gửi thành công → thoát inner loop
+
+        except asyncio.CancelledError:
+          print(f"[BECUS] {webhook_name} bị cancel")
+          raise
+
         except discord.HTTPException as e:
           if e.status == 429:
             try:
-              retry_after = max(0.1, float(getattr(e, "retry_after", 1.0)))
+              retry_after = max(
+                  0.5, float(getattr(e, "retry_after", 1.0))
+              )
             except (TypeError, ValueError):
               retry_after = 1.0
-            remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
-              break
-            await asyncio.sleep(min(retry_after, remaining))
+            print(f"[BECUS] {webhook_name} 429 — chờ {retry_after}s")
+            await asyncio.sleep(retry_after)
+            continue  # retry mãi, đéo break
+          elif e.status >= 500:
+            print(f"[BECUS] {webhook_name} HTTP {e.status} — chờ 5s")
+            await asyncio.sleep(5)
             continue
-          return
+          else:
+            print(f"[BECUS] {webhook_name} HTTP {e.status} — dừng")
+            return
+
         except (discord.NotFound, discord.Forbidden):
-          return
-        except (asyncio.TimeoutError, OSError):
-          return
-        except asyncio.CancelledError:
-          raise
-        except Exception:
+          print(f"[BECUS] {webhook_name} bị xóa/forbidden — dừng")
           return
 
-      await asyncio.sleep(1)
+        except (asyncio.TimeoutError, OSError):
+          print(f"[BECUS] {webhook_name} network lỗi — chờ 3s")
+          await asyncio.sleep(3)
+          continue
+
+        except Exception as ex:
+          print(f"[BECUS] {webhook_name} lỗi lạ: {ex}")
+          await asyncio.sleep(3)
+          continue
+
+      # Delay jitter — đéo đều đặn
+      await asyncio.sleep(random.uniform(0.5, 1.2))
+
     except asyncio.CancelledError:
+      print(f"[BECUS] {webhook_name} outer cancel")
       raise
-    except Exception:
-      await asyncio.sleep(1)
+    except Exception as ex:
+      print(f"[BECUS] {webhook_name} outer lỗi: {ex}")
+      await asyncio.sleep(2)
+
+
 class BecusWebhookView(discord.ui.View):
   def __init__(self, bot_instance, pool, owner_id):
     super().__init__(timeout=300)
