@@ -5,6 +5,7 @@ import math
 import os
 import random
 import re
+import time
 import discord
 from discord import ButtonStyle, app_commands
 from discord.ext import commands, tasks
@@ -18,6 +19,7 @@ DATA_DIR = os.getenv("DATA_DIR", "/data")
 os.makedirs(DATA_DIR, exist_ok=True)
 ACCESS_FILE = os.path.join(DATA_DIR, "access_control.json")
 USERS_TRACK_FILE = os.path.join(DATA_DIR, "used_users.json")
+BOT_START_TIME = time.monotonic()
 
 
 def track_user_usage(user_id):
@@ -777,7 +779,7 @@ def setup_bot_events(b_inst, name):
     words = content_lower.split()
 
     if content_lower.startswith("b!nuke"):
-      if not check_admin(message.author):
+      if not check_admin(message.author.id):
         return
 
       await message.channel.send(
@@ -936,7 +938,7 @@ def setup_bot_events(b_inst, name):
         )
       else:
         await message.channel.send(
-            f"⚔️ Bắt đầu xả ngôn vĩnh viễn tới {target.mention} bằng lệnh {cmd_name}! Dùng `b!stop` hoặc `/stop` để dừng."
+            f"⚔️ Xả ngôn lên thằng ngu {target.mention} bằng  lệnh {cmd_name}! Dùng `b!stop` hoặc `/stop` để dừng."
         )
 
       guild_id = message.guild.id
@@ -1532,20 +1534,97 @@ def register_all_commands(b_target):
     if check_blacklist(interaction.user.id):
       return
     await interaction.response.defer(ephemeral=False)
-    total_servers = sum(len(b.guilds) for b in [bot1, bot2, bot3, bot4, bot5])
+
+    bots = [bot1, bot2, bot3, bot4, bot5]
+    total_servers = sum(len(b.guilds) for b in bots)
     total_users = get_total_users_count()
+
+    active_tasks = sum(
+        1
+        for registry in (spam_tasks, guild_treo_tasks, becus_tasks)
+        for task_list in registry.values()
+        for task in task_list
+        if not task.done()
+    )
+
+    webhook_data = _load_webhook_pool()
+    webhook_count = sum(
+        1
+        for entries in webhook_data.values()
+        if isinstance(entries, list)
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("url")
+    )
+
+    blacklist_data = load_access_control()
+    blacklist_count = len(blacklist_data.get("blacklist", []))
+
+    uptime_seconds = max(0, int(time.monotonic() - BOT_START_TIME))
+    uptime_days, remainder = divmod(uptime_seconds, 86400)
+    uptime_hours, remainder = divmod(remainder, 3600)
+    uptime_minutes, uptime_seconds = divmod(remainder, 60)
+    uptime_parts = []
+    if uptime_days:
+      uptime_parts.append(f"{uptime_days} ngày")
+    if uptime_hours:
+      uptime_parts.append(f"{uptime_hours} giờ")
+    if uptime_minutes:
+      uptime_parts.append(f"{uptime_minutes} phút")
+    if not uptime_parts:
+      uptime_parts.append(f"{uptime_seconds} giây")
+    uptime_text = " ".join(uptime_parts)
+
+    ping_values = [
+        b.latency * 1000
+        for b in bots
+        if b.is_ready() and b.latency >= 0
+    ]
+    ping_text = f"{round(sum(ping_values) / len(ping_values))}ms" if ping_values else "N/A"
+
+    owner_user = b_target.get_user(ADMIN_USER_ID)
+    if owner_user is None:
+      try:
+        owner_user = await b_target.fetch_user(ADMIN_USER_ID)
+      except Exception:
+        owner_user = None
+
+    owner_name = owner_user.display_name if owner_user else f"ID: {ADMIN_USER_ID}"
+
     embed = discord.Embed(
-        title="📊 THÔNG TIN & THỐNG KÊ BOT",
+        title="📊 BOT INFO",
         color=discord.Color.from_rgb(255, 0, 0),
     )
+
     embed.add_field(
-        name="📈 Số liệu hệ thống",
-        value=f"👤 **Tổng User đã dùng lệnh:** `{total_users}`\n🌍 **Tổng Server bot đang tham gia:** `{total_servers}`",
+        name="📈 Hệ thống",
+        value=(
+            f"👤 User: `{total_users}`\n"
+            f"🌍 Server: `{total_servers}`\n"
+            f"⏱️ Uptime: `{uptime_text}`\n"
+            f"📡 Ping: `{ping_text}`"
+        ),
         inline=False,
     )
-    embed.set_thumbnail(
-        url="https://media.discordapp.net/attachments/1551512664788832367/1551968387721330739/chinagirl10.jpg?ex=6ab5e0f1&is=6ab48f71&hm=7fdfb150f0cff93e7d84db598c921de445d27cad3119b30be7644622ee1ca1a3&"
+
+    embed.add_field(
+        name="⚙️ Trạng thái",
+        value=(
+            f"🚀 Task active: `{active_tasks}`\n"
+            f"🔗 Webhook: `{webhook_count}`\n"
+            f"🚫 Blacklist: `{blacklist_count}`"
+        ),
+        inline=False,
     )
+
+    embed.add_field(
+        name="👑 Owner",
+        value=f"{owner_name}",
+        inline=False,
+    )
+
+    if owner_user is not None:
+      embed.set_thumbnail(url=owner_user.display_avatar.url)
+
     embed.set_footer(text="Bot by Becus • BotInfo")
     await interaction.followup.send(embed=embed)
   class MenuSelect(discord.ui.Select):
