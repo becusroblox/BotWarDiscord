@@ -79,7 +79,7 @@ _file_cache_mtime = {}
 # Persistent webhook pool
 # ---------------------------------------------------------------------------
 WEBHOOK_POOL_FILE = "becus_webhooks.json"
-WEBHOOK_POOL_SIZE = 10
+WEBHOOK_POOL_SIZE = 1
 WEBHOOK_NAME_PREFIX = "/BECUS "
 WEBHOOK_BANNER_URL = (
     "https://cdn.discordapp.com/attachments/1551512664788832367/1555820547806593134/6c1a42d4f32acf94040c7201e1184460.gif"
@@ -154,9 +154,7 @@ async def _fetch_existing_webhook(webhook_url, bot_instance):
 
 
 async def _ensure_becus_webhook_pool(bot_instance, guild, channel, owner_user):
-  """
-  Ensure exactly ten usable /BECUS webhooks exist for this guild/channel.
-  """
+  """Tạo đúng 1 webhook /BECUS cho channel. Nếu có rồi → giữ nguyên."""
   if guild is None or channel is None:
     return []
 
@@ -167,95 +165,38 @@ async def _ensure_becus_webhook_pool(bot_instance, guild, channel, owner_user):
     if not isinstance(saved, list):
       saved = []
 
-    channel_entries = [
-        entry for entry in saved
-        if isinstance(entry, dict)
-        and str(entry.get("channel_id")) == str(channel.id)
-    ]
+    # Tìm webhook cũ của channel này
+    existing_entry = None
+    for entry in saved:
+      if (isinstance(entry, dict)
+          and str(entry.get("channel_id")) == str(channel.id)
+          and entry.get("url")):
+        existing_entry = entry
+        break
 
     valid = []
-    seen_ids = set()
-
-    for entry in channel_entries:
-      url = entry.get("url")
-      if not url:
-        continue
-      webhook = await _fetch_existing_webhook(url, bot_instance)
-      if webhook is None:
-        continue
-      if webhook.id in seen_ids:
-        continue
-      if webhook.guild_id is not None and webhook.guild_id != guild.id:
-        continue
-      seen_ids.add(webhook.id)
-      valid.append(
-          _webhook_entry(
-              guild.id,
-              channel.id,
-              entry.get("name") or webhook.name or "",
-              url,
-          )
-      )
-
-    if len(valid) < WEBHOOK_POOL_SIZE:
-      try:
-        channel_webhooks = await channel.webhooks()
-      except (discord.Forbidden, discord.HTTPException, OSError):
-        channel_webhooks = []
-      except Exception:
-        channel_webhooks = []
-
-      existing_by_name = {
-          webhook.name: webhook
-          for webhook in channel_webhooks
-          if webhook.name in {
-              f"{WEBHOOK_NAME_PREFIX}{number}"
-              for number in range(1, WEBHOOK_POOL_SIZE + 1)
-          }
-      }
-
-      for number in range(1, WEBHOOK_POOL_SIZE + 1):
-        if len(valid) >= WEBHOOK_POOL_SIZE:
-          break
-
-        desired_name = f"{WEBHOOK_NAME_PREFIX}{number}"
-        if desired_name in {entry["name"] for entry in valid}:
-          continue
-
-        existing = existing_by_name.get(desired_name)
-        existing_url = getattr(existing, "url", None) if existing else None
-        if not existing_url:
-          continue
-
-        fetched = await _fetch_existing_webhook(existing_url, bot_instance)
-        if fetched is None:
-          continue
-
+    # Validate webhook cũ
+    if existing_entry:
+      webhook = await _fetch_existing_webhook(existing_entry["url"], bot_instance)
+      if webhook is not None:
         valid.append(
             _webhook_entry(
                 guild.id,
                 channel.id,
-                desired_name,
-                existing_url,
+                existing_entry.get("name") or webhook.name or "/BECUS",
+                existing_entry["url"],
             )
         )
-    used_names = {entry["name"] for entry in valid}
-    avatar_bytes = None
-    if len(valid) < WEBHOOK_POOL_SIZE:
+
+    # Nếu chưa có → tạo mới
+    if not valid:
+      avatar_bytes = None
       try:
         avatar_bytes = await owner_user.display_avatar.read()
       except Exception:
         avatar_bytes = None
 
-    for number in range(1, WEBHOOK_POOL_SIZE + 1):
-      if len(valid) >= WEBHOOK_POOL_SIZE:
-        break
-
-      desired_name = f"{WEBHOOK_NAME_PREFIX}{number}"
-      if desired_name in used_names:
-        continue
-
-      create_kwargs = {"name": desired_name}
+      create_kwargs = {"name": WEBHOOK_NAME_PREFIX.strip() or "/BECUS"}
       if avatar_bytes:
         create_kwargs["avatar"] = avatar_bytes
 
@@ -264,7 +205,7 @@ async def _ensure_becus_webhook_pool(bot_instance, guild, channel, owner_user):
       while True:
         try:
           webhook = await channel.create_webhook(
-              reason="BECUS webhook pool",
+              reason="BECUS webhook",
               **create_kwargs,
           )
           break
@@ -289,24 +230,22 @@ async def _ensure_becus_webhook_pool(bot_instance, guild, channel, owner_user):
           break
 
       if webhook is None:
-        continue
+        return []
 
       valid.append(
           _webhook_entry(
               guild.id,
               channel.id,
-              desired_name,
+              create_kwargs["name"],
               webhook.url,
           )
       )
-      used_names.add(desired_name)
 
+    # Lưu lại: giữ channel khác, thay channel này
     remaining = [
-        entry for entry in saved
-        if not (
-            isinstance(entry, dict)
-            and str(entry.get("channel_id")) == str(channel.id)
-        )
+        e for e in saved
+        if not (isinstance(e, dict)
+                and str(e.get("channel_id")) == str(channel.id))
     ]
     data[guild_key] = remaining + valid
     _save_webhook_pool(data)
@@ -1377,15 +1316,15 @@ def register_all_commands(b_target):
     elif tyle <= 50:
       level = "Hơi Cute 🌷"
       style = "Dễ Thương Vừa Đủ"
-      nhan_xet = "Nhìn Vào Là Cửng Cặc"
+      nhan_xet = "Ai Nhìn Vào Cũng Đỏ Mặt"
     elif tyle <= 80:
       level = "Quá Cute 🥰"
       style = "Quá Là Đáng Yêu"
-      nhan_xet = "Đáng Yêu Từ Mặt Đến Lỗ Đít"
+      nhan_xet = "Đứng Top1 Đáng Iu Nhất Trường"
     elif tyle <= 95:
       level = "Cực Kỳ Cute 💖"
       style = "Cute Vãi Lồn Luôn"
-      nhan_xet = "Nhìn Vào Chỉ Muốn Đụ Rên~ Siêu Nứng Và Dễ Thương"
+      nhan_xet = "Cute Đến Nổi Chúa Cũng Phải Thốt Lên OMG"
     else:
       level = "CHÚA TỂ CUTE 👑✨"
       style = "Cute Không Ai Bằng"
@@ -2358,20 +2297,10 @@ _becus_send_semaphore = asyncio.Semaphore(5)
 
 
 async def _run_single_webhook_loop(bot_instance, entry, channel, targets):
-  """
-  Vòng lặp vô hạn cho 1 webhook, chạy song song với các webhook khác.
+  """Vòng lặp spam 1 webhook — burst 8-15 tin + nghỉ 2-4s."""
+  webhook_name = entry.get("name", "/BECUS")
 
-  Đặc điểm:
-  - Cache nội dung file 1 lần, đéo đọc disk mỗi vòng lặp.
-  - Retry fetch webhook 5 lần nếu fail ban đầu.
-  - Retry vô hạn khi gặp 429 — đéo bao giờ break vì rate limit.
-  - Log mọi action để dễ debug trên Railway.
-  - Delay jitter 0.5-1.2s để tránh pattern đều đặn.
-  - Semaphore giới hạn 5 webhook gửi cùng lúc, tránh rate limit per-IP.
-  """
-  webhook_name = entry.get("name", "?")
-
-  # --- 1. Cache nội dung file 1 lần duy nhất ------------------------------
+  # Cache nội dung file 1 lần
   source_files = [
       os.path.join(os.getcwd(), "BECUSwarFilengon.txt"),
       os.path.join(os.getcwd(), "BECUSwarFilengonV3.txt"),
@@ -2389,7 +2318,7 @@ async def _run_single_webhook_loop(bot_instance, entry, channel, targets):
 
   mentions_str = " ".join(t.mention for t in targets if t)
 
-  # --- 2. Retry fetch webhook — đéo bỏ cuộc ngay --------------------------
+  # Fetch webhook — retry 5 lần
   webhook = None
   for attempt in range(5):
     try:
@@ -2401,70 +2330,70 @@ async def _run_single_webhook_loop(bot_instance, entry, channel, targets):
     await asyncio.sleep(2 ** attempt)
 
   if webhook is None:
-    print(f"[BECUS] {webhook_name} fetch fail sau 5 lần — bỏ qua")
+    print(f"[BECUS] {webhook_name} fetch fail — bỏ qua")
     return
 
-  print(f"[BECUS] {webhook_name} bắt đầu vòng lặp")
+  print(f"[BECUS] {webhook_name} bắt đầu")
 
-  # --- 3. Vòng lặp vô hạn — đéo break vì rate limit -----------------------
+  consecutive_429 = 0
+
   while True:
     try:
-      content = f"# {random.choice(lines)} {mentions_str}"
+      # Burst 8-15 tin
+      burst = random.randint(8, 15)
+      for _ in range(burst):
+        content = f"# {random.choice(lines)} {mentions_str}"
 
-      # Gửi với retry vô hạn khi 429
-      while True:
-        try:
-          async with _becus_send_semaphore:
-            await webhook.send(
-                content,
-                wait=False,
-                allowed_mentions=discord.AllowedMentions(
-                    users=True,
-                    roles=False,
-                    everyone=False,
-                ),
-            )
-          break  # gửi thành công → thoát inner loop
-
-        except asyncio.CancelledError:
-          print(f"[BECUS] {webhook_name} bị cancel")
-          raise
-
-        except discord.HTTPException as e:
-          if e.status == 429:
-            try:
-              retry_after = max(
-                  0.5, float(getattr(e, "retry_after", 1.0))
+        while True:
+          try:
+            async with _becus_send_semaphore:
+              await webhook.send(
+                  content,
+                  wait=False,
+                  allowed_mentions=discord.AllowedMentions(
+                      users=True, roles=False, everyone=False,
+                  ),
               )
-            except (TypeError, ValueError):
-              retry_after = 1.0
-            print(f"[BECUS] {webhook_name} 429 — chờ {retry_after}s")
-            await asyncio.sleep(retry_after)
-            continue  # retry mãi, đéo break
-          elif e.status >= 500:
-            print(f"[BECUS] {webhook_name} HTTP {e.status} — chờ 5s")
-            await asyncio.sleep(5)
-            continue
-          else:
-            print(f"[BECUS] {webhook_name} HTTP {e.status} — dừng")
+            consecutive_429 = 0
+            break
+          except asyncio.CancelledError:
+            print(f"[BECUS] {webhook_name} bị cancel")
+            raise
+          except discord.HTTPException as e:
+            if e.status == 429:
+              consecutive_429 += 1
+              try:
+                retry_after = max(0.5, float(getattr(e, "retry_after", 1.0)))
+              except (TypeError, ValueError):
+                retry_after = 1.0
+              backoff = min(
+                  retry_after * (2 ** (consecutive_429 - 1)) + random.uniform(0.5, 2.0),
+                  60.0,
+              )
+              print(f"[BECUS] {webhook_name} 429 lần {consecutive_429} — chờ {backoff:.1f}s")
+              await asyncio.sleep(backoff)
+              continue
+            elif e.status >= 500:
+              await asyncio.sleep(5)
+              continue
+            else:
+              print(f"[BECUS] {webhook_name} HTTP {e.status} — dừng")
+              return
+          except (discord.NotFound, discord.Forbidden):
+            print(f"[BECUS] {webhook_name} webhook bị xóa — dừng")
             return
+          except (asyncio.TimeoutError, OSError):
+            await asyncio.sleep(3)
+            continue
+          except Exception as ex:
+            print(f"[BECUS] {webhook_name} lỗi: {ex}")
+            await asyncio.sleep(3)
+            continue
 
-        except (discord.NotFound, discord.Forbidden):
-          print(f"[BECUS] {webhook_name} bị xóa/forbidden — dừng")
-          return
+        await asyncio.sleep(random.uniform(0.1, 0.3))
 
-        except (asyncio.TimeoutError, OSError):
-          print(f"[BECUS] {webhook_name} network lỗi — chờ 3s")
-          await asyncio.sleep(3)
-          continue
-
-        except Exception as ex:
-          print(f"[BECUS] {webhook_name} lỗi lạ: {ex}")
-          await asyncio.sleep(3)
-          continue
-
-      # Delay jitter — đéo đều đặn
-      await asyncio.sleep(random.uniform(0.5, 1.2))
+      # Nghỉ 2-4s
+      await asyncio.sleep(random.uniform(2, 4))
 
     except asyncio.CancelledError:
       print(f"[BECUS] {webhook_name} outer cancel")
@@ -2474,39 +2403,92 @@ async def _run_single_webhook_loop(bot_instance, entry, channel, targets):
       await asyncio.sleep(2)
 
 
-class BecusWebhookView(discord.ui.View):
-  def __init__(self, bot_instance, pool, owner_id):
+class WebhookSetupView(discord.ui.View):
+  def __init__(self, bot_instance, owner_id):
     super().__init__(timeout=300)
     self.bot_instance = bot_instance
-    self.pool = pool[:WEBHOOK_POOL_SIZE]
     self.owner_id = owner_id
-    self.selected_webhooks = []
-    self.selected_channel = None
-    self.selected_users = []
-
-    options = [
-        discord.SelectOption(
-            label=entry["name"],
-            value=str(index),
-            description="Webhook /BECUS đang hoạt động",
-        )
-        for index, entry in enumerate(self.pool[:WEBHOOK_POOL_SIZE])
-    ]
-    self.webhook_select = discord.ui.Select(
-        placeholder="Chọn webhook (tối đa 10)",
-        min_values=1,
-        max_values=min(10, len(options)),
-        options=options,
-        custom_id="becus_webhook_select",
-    )
-    self.webhook_select.callback = self.webhook_callback
-    self.add_item(self.webhook_select)
+    self.selected_channels = []
 
     self.channel_select = discord.ui.ChannelSelect(
-        placeholder="Chọn kênh để spam",
+        placeholder="Chọn các kênh cần tạo webhook (1-10)",
         channel_types=[discord.ChannelType.text],
         min_values=1,
-        max_values=1,
+        max_values=10,
+        custom_id="webhook_channel_select",
+    )
+    self.channel_select.callback = self.channel_callback
+    self.add_item(self.channel_select)
+
+  async def interaction_check(self, interaction: discord.Interaction):
+    if check_blacklist(interaction.user.id):
+      return False
+    if interaction.user.id != self.owner_id:
+      if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True)
+      return False
+    return True
+
+  async def channel_callback(self, interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    self.selected_channels = list(self.channel_select.values) if self.channel_select.values else []
+    names = ", ".join(ch.mention for ch in self.selected_channels[:5])
+    if len(self.selected_channels) > 5:
+      names += f" +{len(self.selected_channels) - 5} kênh khác"
+    await interaction.followup.send(
+        f"Đã chọn {len(self.selected_channels)} kênh: {names or 'Không rõ'}",
+        ephemeral=True,
+    )
+
+  @discord.ui.button(label="Start", style=ButtonStyle.green, custom_id="webhook_setup_start")
+  async def start_button(self, interaction: discord.Interaction, button: Button):
+    await interaction.response.defer(ephemeral=True)
+
+    if not self.selected_channels:
+      await interaction.followup.send("❌ Vui lòng chọn ít nhất 1 kênh.", ephemeral=True)
+      return
+
+    guild = interaction.guild
+    owner_user = interaction.user
+
+    results = []
+    for ch in self.selected_channels:
+      pool = await _ensure_becus_webhook_pool(
+          self.bot_instance, guild, ch, owner_user,
+      )
+      results.append((ch, bool(pool)))
+
+    ok = sum(1 for _, success in results if success)
+    fail = len(results) - ok
+
+    lines = []
+    for ch, success in results:
+      icon = "✅" if success else "❌"
+      status = "Đang hoạt động" if success else "Tạo thất bại"
+      lines.append(f"{icon} {ch.mention} — {status}")
+
+    embed = discord.Embed(
+        title="😜 BECUS WEBHOOK — KẾT QUẢ",
+        description="\n".join(lines) or "Không có kênh nào.",
+        color=discord.Color.green() if fail == 0 else discord.Color.orange(),
+    )
+    embed.set_footer(text=f"✅ {ok} thành công • ❌ {fail} thất bại")
+    embed.timestamp = discord.utils.utcnow()
+    await interaction.edit_original_response(embed=embed, view=None)
+
+class BecusWebhookView(discord.ui.View):
+  def __init__(self, bot_instance, owner_id):
+    super().__init__(timeout=300)
+    self.bot_instance = bot_instance
+    self.owner_id = owner_id
+    self.selected_channels = []
+    self.selected_users = []
+
+    self.channel_select = discord.ui.ChannelSelect(
+        placeholder="Chọn kênh để spam (1-10)",
+        channel_types=[discord.ChannelType.text],
+        min_values=1,
+        max_values=10,
         custom_id="becus_channel_select",
     )
     self.channel_select.callback = self.channel_callback
@@ -2530,21 +2512,14 @@ class BecusWebhookView(discord.ui.View):
       return False
     return True
 
-  async def webhook_callback(self, interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-    indexes = [int(v) for v in interaction.data.get("values", [])]
-    self.selected_webhooks = [
-        self.pool[i] for i in indexes if 0 <= i < len(self.pool)
-    ]
-    await interaction.followup.send(
-        f"Đã chọn {len(self.selected_webhooks)} webhook.", ephemeral=True
-    )
-
   async def channel_callback(self, interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    self.selected_channel = self.channel_select.values[0] if self.channel_select.values else None
+    self.selected_channels = list(self.channel_select.values) if self.channel_select.values else []
+    names = ", ".join(ch.mention for ch in self.selected_channels[:5])
+    if len(self.selected_channels) > 5:
+      names += f" +{len(self.selected_channels) - 5} kênh khác"
     await interaction.followup.send(
-        f"Đã chọn kênh: {self.selected_channel.mention if self.selected_channel else 'Không rõ'}",
+        f"Đã chọn {len(self.selected_channels)} kênh: {names or 'Không rõ'}",
         ephemeral=True,
     )
 
@@ -2560,17 +2535,17 @@ class BecusWebhookView(discord.ui.View):
   @discord.ui.button(label="Start", style=ButtonStyle.green, custom_id="becus_start_btn")
   async def start_button(self, interaction: discord.Interaction, button: Button):
     await interaction.response.defer(ephemeral=True)
-    if not self.selected_webhooks:
-      await interaction.followup.send("❌ Vui lòng chọn webhook.", ephemeral=True)
-      return
-    if self.selected_channel is None:
-      await interaction.followup.send("❌ Vui lòng chọn kênh gửi.", ephemeral=True)
+
+    if not self.selected_channels:
+      await interaction.followup.send("❌ Vui lòng chọn ít nhất 1 kênh.", ephemeral=True)
       return
     if not self.selected_users:
       await interaction.followup.send("❌ Vui lòng chọn user cần tag.", ephemeral=True)
       return
 
-    guild_id = interaction.guild.id
+    guild = interaction.guild
+    guild_id = guild.id
+
     current = [task for task in becus_tasks.get(guild_id, []) if not task.done()]
     becus_tasks[guild_id] = current
     if current:
@@ -2580,17 +2555,33 @@ class BecusWebhookView(discord.ui.View):
       )
       return
 
+    # Lấy webhook cho từng channel
+    entries = []
+    missing = []
+    for ch in self.selected_channels:
+      pool = await _get_existing_becus_webhook_pool(
+          self.bot_instance, guild, ch,
+      )
+      if not pool:
+        missing.append(ch)
+      else:
+        entries.append((pool[0], ch))
+
+    if not entries:
+      await interaction.followup.send(
+          "❌ Đéo có webhook /BECUS cho các kênh đã chọn. Dùng `/webhook` để tạo.",
+          ephemeral=True,
+      )
+      return
+
     async def master_worker():
       tasks = [
           asyncio.create_task(
               _run_single_webhook_loop(
-                  self.bot_instance,
-                  entry,
-                  self.selected_channel,
-                  self.selected_users,
+                  self.bot_instance, entry, ch, self.selected_users,
               )
           )
-          for entry in self.selected_webhooks
+          for entry, ch in entries
       ]
       try:
         await asyncio.gather(*tasks)
@@ -2602,10 +2593,11 @@ class BecusWebhookView(discord.ui.View):
 
     task = asyncio.create_task(master_worker())
     _track_task(becus_tasks, guild_id, task)
-    await interaction.followup.send(
-        "Địt Mẹ Chúng Mày",
-        ephemeral=True,
-    )
+
+    msg = f"🚀 Đang spam trên {len(entries)} kênh..."
+    if missing:
+      msg += f"\n⚠️ {len(missing)} kênh thiếu webhook (dùng `/webhook`)"
+    await interaction.followup.send(msg, ephemeral=True)
 
   @discord.ui.button(label="Stop", style=ButtonStyle.red, custom_id="becus_stop_btn")
   async def stop_button(self, interaction: discord.Interaction, button: Button):
@@ -2625,8 +2617,8 @@ class BecusWebhookView(discord.ui.View):
 def register_admin_commands(b_target):
 
   @b_target.tree.command(
-      name="webhook",
-      description="Tạo và kiểm tra webhook /BECUS",
+    name="webhook",
+    description="Tạo webhook /BECUS cho các kênh (Owner)",
   )
   async def webhook_slash(interaction: discord.Interaction):
     if check_blacklist(interaction.user.id):
@@ -2634,7 +2626,7 @@ def register_admin_commands(b_target):
     if not check_owner(interaction.user.id):
       await interaction.response.defer(ephemeral=True)
       return
-    if interaction.guild is None or interaction.channel is None:
+    if interaction.guild is None:
       await interaction.response.send_message(
           "❌ Lệnh này phải được dùng trong một server.",
           ephemeral=True,
@@ -2643,50 +2635,25 @@ def register_admin_commands(b_target):
 
     await interaction.response.defer(ephemeral=False)
 
-    pool = await _ensure_becus_webhook_pool(
-        b_target,
-        interaction.guild,
-        interaction.channel,
-        interaction.user,
+    view = WebhookSetupView(b_target, interaction.user.id)
+    embed = discord.Embed(
+        title="😜 BECUS WEBHOOK SETUP",
+        description=(
+            "Chọn các kênh cần tạo webhook `/BECUS`.\n"
+            "Mỗi kênh **1 webhook**.\n"
+            "Kênh đã có webhook sẽ được giữ nguyên.\n\n"
+            "Sau khi chọn xong, bấm **Start**."
+        ),
+        color=discord.Color.red(),
     )
-
-    if len(pool) < WEBHOOK_POOL_SIZE:
-      embed = discord.Embed(
-          title="😜 BECUS WEBHOOK",
-          description=(
-              f"Pool hiện có **{len(pool)}/{WEBHOOK_POOL_SIZE}** webhook hoạt động.\n"
-              "Bot sẽ tạo lại phần còn thiếu nếu có quyền **Manage Webhooks**.\n\n"
-              "Sau khi đủ 10 webhook, dùng `/becus` để chọn webhook và chửi thg ngu."
-          ),
-          color=discord.Color.orange(),
-      )
-    else:
-      embed = discord.Embed(
-          title="😜 BECUS WEBHOOK",
-          description=(
-              "Đã kiểm tra đủ **10/10 webhook /BECUS**.\n"
-              "Webhook còn tồn tại được giữ nguyên; webhook bị thiếu/xóa sẽ được tạo lại\n\n"
-              "Dùng `/becus` để chọn webhook và chửi thg ngu"
-          ),
-          color=discord.Color.red(),
-      )
-
-    for index in range(1, WEBHOOK_POOL_SIZE + 1):
-      entry = next((item for item in pool if item.get("name") == f"{WEBHOOK_NAME_PREFIX}{index}"), None)
-      embed.add_field(
-          name=f"{index}. {WEBHOOK_NAME_PREFIX}{index}",
-          value="<a:__:1554837937957634141> Webhook đang hoạt động." if entry else "❌ Chưa có webhook.",
-          inline=False,
-      )
-
     embed.set_image(url=WEBHOOK_BANNER_URL)
     embed.set_footer(text="BECUS • EPR")
     embed.timestamp = discord.utils.utcnow()
-    await interaction.followup.send(embed=embed, ephemeral=False)
-
+    await interaction.followup.send(embed=embed, view=view, ephemeral=False)
+ 
   @b_target.tree.command(
-      name="becus",
-      description="Chửi Thằng Ngu Bằng Webhook",
+    name="becus",
+    description="Chửi Thằng Ngu Bằng Webhook",
   )
   async def becus_slash(interaction: discord.Interaction):
     if check_blacklist(interaction.user.id):
@@ -2694,7 +2661,7 @@ def register_admin_commands(b_target):
     if not check_owner(interaction.user.id):
       await interaction.response.defer(ephemeral=True)
       return
-    if interaction.guild is None or interaction.channel is None:
+    if interaction.guild is None:
       await interaction.response.send_message(
           "❌ Lệnh này phải được dùng trong một server.",
           ephemeral=True,
@@ -2702,34 +2669,31 @@ def register_admin_commands(b_target):
       return
 
     await interaction.response.defer(ephemeral=False)
-    pool = await _get_existing_becus_webhook_pool(
-        b_target,
-        interaction.guild,
-        interaction.channel,
-    )
-    if len(pool) < WEBHOOK_POOL_SIZE:
-      await interaction.followup.send(
-          "❌ Đéo có webhook /BECUS cho kênh này. Dùng `/webhook` để tạo/kiểm tra pool.",
-          ephemeral=True,
-      )
-      return
 
-    view = BecusWebhookView(b_target, pool, interaction.user.id)
+    # Đếm webhook hoạt động trong server
+    data = _load_webhook_pool()
+    guild_entries = data.get(str(interaction.guild.id), [])
+    active_count = 0
+    total_channels = 0
+    if isinstance(guild_entries, list):
+      for entry in guild_entries:
+        if isinstance(entry, dict) and entry.get("url"):
+          total_channels += 1
+          wh = await _fetch_existing_webhook(entry["url"], b_target)
+          if wh is not None:
+            active_count += 1
+
+    view = BecusWebhookView(b_target, interaction.user.id)
     embed = discord.Embed(
         title="😜 BECUS WEBHOOK",
         description=(
-            "Chọn webhook kênh và thằng ngu rồi bấm **Start**.\n"
-            "Start kích hoạt webhook chửi chết mẹ thg ngu song song vĩnh viễn.\n\n"
-            "Muốn **Stop** thì sài `b!stop` hoặc `/stop` để dừng"
+            f"Webhook hoạt động: **{active_count}/{total_channels or 10}**\n\n"
+            "Chọn kênh và thằng ngu rồi bấm **Start**.\n"
+            "Mỗi kênh dùng webhook `/BECUS` riêng — spam song song đa kênh.\n\n"
+            "Muốn **Stop** thì sài `b!stop` hoặc `/stop` để dừng."
         ),
         color=discord.Color.red(),
     )
-    for index, entry in enumerate(pool[:WEBHOOK_POOL_SIZE], 1):
-      embed.add_field(
-          name=f"{index}. {entry['name']}",
-          value="Webhook đang hoạt động.",
-          inline=False,
-      )
     embed.set_image(url=WEBHOOK_BANNER_URL)
     embed.set_footer(text="BECUS • EPR")
     embed.timestamp = discord.utils.utcnow()
