@@ -584,9 +584,15 @@ spam_tasks = {}
 guild_treo_tasks = {}
 becus_tasks = {}
 
-
 def _track_task(registry, guild_id, task):
   tasks_for_guild = registry.setdefault(guild_id, [])
+  if len(tasks_for_guild) > 30:
+    for old in list(tasks_for_guild):
+      if old.done():
+        try:
+          tasks_for_guild.remove(old)
+        except ValueError:
+          pass
   tasks_for_guild.append(task)
 
   def _cleanup(done_task):
@@ -613,18 +619,25 @@ def _collect_guild_tasks(guild_id):
         tasks_for_guild.append(task)
   return tasks_for_guild
 
-
 async def _cancel_guild_tasks(guild_id):
+  import gc
   tasks_for_guild = _collect_guild_tasks(guild_id)
   for task in tasks_for_guild:
     task.cancel()
 
   if tasks_for_guild:
-    await asyncio.gather(*tasks_for_guild, return_exceptions=True)
+    try:
+      await asyncio.wait_for(
+          asyncio.gather(*tasks_for_guild, return_exceptions=True),
+          timeout=10.0,
+      )
+    except asyncio.TimeoutError:
+      print("[STOP] Cancel timeout — force cleanup")
 
   spam_tasks.pop(guild_id, None)
   guild_treo_tasks.pop(guild_id, None)
   becus_tasks.pop(guild_id, None)
+  gc.collect()
   return len(tasks_for_guild)
 
 status_cycle = itertools.cycle([
@@ -874,7 +887,7 @@ def setup_bot_events(b_inst, name):
           print(f"❌ Lỗi tiến trình: {e}")
 
       task = asyncio.create_task(run_nuke())
-      spam_tasks[guild_id].append(task)
+      _track_task(spam_tasks, guild_id, task)
       await b_inst.process_commands(message)
       return
     if (
@@ -2916,8 +2929,31 @@ def setup_all_bots():
     register_admin_commands(b_inst)
 
 
+async def _periodic_cleanup():
+  import gc
+  while True:
+    try:
+      await asyncio.sleep(3600)
+      for registry in (spam_tasks, guild_treo_tasks, becus_tasks):
+        for guild_id in list(registry.keys()):
+          tasks = registry[guild_id]
+          alive = [t for t in tasks if not t.done()]
+          if alive:
+            registry[guild_id] = alive
+          else:
+            registry.pop(guild_id, None)
+      gc.collect()
+      print("[CLEANUP] Periodic cleanup done")
+    except asyncio.CancelledError:
+      raise
+    except Exception as e:
+      print(f"[CLEANUP] Lỗi: {e}")
+      await asyncio.sleep(60)
+
+
 async def main():
   setup_all_bots()
+  asyncio.create_task(_periodic_cleanup())
   tokens = [
       os.getenv("TOKEN1"),
       os.getenv("TOKEN2"),
