@@ -1624,7 +1624,7 @@ def register_all_commands(b_target):
 
     embed.add_field(
         name="<a:redcrown:1558802826027602061> Owner",
-        value=f"**`{owner_name}`**",
+        value=f"<a:discord:1558802944999301250>**`{owner_name}`**",
         inline=False,
     )
 
@@ -2697,10 +2697,10 @@ def register_admin_commands(b_target):
     embed = discord.Embed(
         title="<:cat1:1558803169218134016> BECUS WEBHOOK SETUP",
         description=(
-            "<a:wingtrai:1558802650844373012>Chọn các kênh cần tạo webhook `/BECUS`<a:wingphai:1558802736802435122>\n"
-            "<a:wingtrai:1558802650844373012>Mỗi kênh **1 webhook** <a:wingphai:1558802736802435122>\n"
-            "<a:wingtrai:1558802650844373012>Kênh đã có webhook sẽ được giữ nguyên <a:wingphai:1558802736802435122>\n\n"
-            "<a:wingtrai:1558802650844373012>Sau khi chọn xong, bấm **Start** <a:wingphai:1558802736802435122>"
+            "<a:wingtrai:1558802650844373012>Chọn các kênh cần tạo webhook `/BECUS\n"
+            "<a:wingtrai:1558802650844373012>Mỗi kênh **1 webhook**\n"
+            "<a:wingtrai:1558802650844373012>Kênh đã có webhook sẽ được giữ nguyên\n\n"
+            "<a:wingtrai:1558802650844373012>Sau khi chọn xong, bấm **Start**"
         ),
         color=discord.Color.red(),
     )
