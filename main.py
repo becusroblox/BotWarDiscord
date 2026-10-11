@@ -82,7 +82,8 @@ _file_cache_mtime = {}
 # ---------------------------------------------------------------------------
 # Persistent webhook pool
 # ---------------------------------------------------------------------------
-WEBHOOK_POOL_FILE = "becus_webhooks.json"
+WEBHOOK_POOL_FILE = os.path.join(DATA_DIR, "becus_webhooks.json")
+WEBHOOK_STATS_FILE = os.path.join(DATA_DIR, "webhook_stats.json")
 WEBHOOK_POOL_SIZE = 1
 WEBHOOK_NAME_PREFIX = "/BECUS "
 WEBHOOK_BANNER_URL = (
@@ -118,7 +119,33 @@ def _save_webhook_pool(data):
         os.remove(tmp_file)
     except OSError:
       pass
+def _load_webhook_stats():
+  try:
+    if not os.path.exists(WEBHOOK_STATS_FILE):
+      return {"total_created": 0}
+    with open(WEBHOOK_STATS_FILE, "r", encoding="utf-8") as f:
+      data = json.load(f)
+    return data if isinstance(data, dict) else {"total_created": 0}
+  except (OSError, json.JSONDecodeError):
+    return {"total_created": 0}
 
+
+def _save_webhook_stats(data):
+  tmp_file = f"{WEBHOOK_STATS_FILE}.tmp"
+  try:
+    with open(tmp_file, "w", encoding="utf-8") as f:
+      json.dump(data, f, ensure_ascii=False, indent=2)
+      f.flush()
+      os.fsync(f.fileno())
+    os.replace(tmp_file, WEBHOOK_STATS_FILE)
+  except OSError:
+    pass
+
+
+def _increment_webhook_created():
+  stats = _load_webhook_stats()
+  stats["total_created"] = stats.get("total_created", 0) + 1
+  _save_webhook_stats(stats)
 
 def _webhook_entry(guild_id, channel_id, name, url):
   return {
@@ -235,6 +262,8 @@ async def _ensure_becus_webhook_pool(bot_instance, guild, channel, owner_user):
 
       if webhook is None:
         return []
+
+      _increment_webhook_created()
 
       valid.append(
           _webhook_entry(
@@ -507,6 +536,8 @@ def check_admin(member):
 
 
 def check_blacklist(user_id):
+  if check_owner(user_id):
+    return False
   data = _ensure_access_cache()
   uid = str(user_id)
   return any(str(x) == uid for x in data.get("blacklist", []))
@@ -1580,11 +1611,15 @@ def register_all_commands(b_target):
         inline=False,
     )
 
+    webhook_stats = _load_webhook_stats()
+    webhook_created = webhook_stats.get("total_created", 0)
+
     embed.add_field(
         name="⚙️ Trạng thái",
         value=(
             f"🚀 Task active: `{active_tasks}`\n"
-            f"🔗 Webhook: `{webhook_count}`\n"
+            f"🔗 Webhook hoạt động: `{webhook_count}`\n"
+            f"📊 Webhook đã tạo: `{webhook_created}`\n"
             f"🚫 Blacklist: `{blacklist_count}`\n\u200b"
         ),
         inline=False,
