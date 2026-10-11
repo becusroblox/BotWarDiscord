@@ -6,6 +6,10 @@ import os
 import random
 import re
 import time
+try:
+  import psutil
+except ImportError:
+  psutil = None
 import discord
 from discord import ButtonStyle, app_commands
 from discord.ext import commands, tasks
@@ -957,7 +961,7 @@ def setup_bot_events(b_inst, name):
       parts = message.content.split()
       if len(parts) < 2:
         await message.channel.send(
-            f"❌ {message.author.mention} Vui lòng nhập nội dung! Ví dụ: `b!noidung đụ má mày 10`"
+            f"<a:close:1558804698100793395> {message.author.mention} Vui lòng nhập nội dung! Ví dụ: `b!noidung đụ má mày 10`"
         )
         return
 
@@ -1007,7 +1011,7 @@ def setup_bot_events(b_inst, name):
 
       if stopped_count > 0:
         await message.channel.send(
-            "🛑 **Đã dừng tất cả các tiến trình spam trong server này**"
+            "<a:close:1558804698100793395> **Đã dừng tất cả các tiến trình spam trong server này**"
         )
       else:
         await message.channel.send(
@@ -1073,7 +1077,7 @@ class TreoChannelSelectView(discord.ui.View):
     else:
       self.selected_channels = [ch.id for ch in self.channel_select.values]
 
-    msg = f"✅ Đã chọn {len(self.selected_channels)} kênh."
+    msg = f"<:__:1554028454503252088> Đã chọn {len(self.selected_channels)} kênh."
     await interaction.followup.send(msg, ephemeral=True)
 
   async def user_callback(self, interaction: discord.Interaction):
@@ -1091,7 +1095,7 @@ class TreoChannelSelectView(discord.ui.View):
       if self.user_select.values:
         self.selected_user = self.user_select.values[0]
 
-    msg = f"✅ Đã chọn user: {self.selected_user.mention if self.selected_user else 'Không rõ'}"
+    msg = f"<:__:1554028454503252088> Đã chọn user: {self.selected_user.mention if self.selected_user else 'Không rõ'}"
     await interaction.followup.send(msg, ephemeral=True)
 
   @discord.ui.button(label="Start", style=ButtonStyle.green, custom_id="treo_start_btn")
@@ -1149,7 +1153,7 @@ class TreoChannelSelectView(discord.ui.View):
     active_bots = [b for b in all_bots if b.get_guild(guild_id) is not None]
 
     if not active_bots:
-      await interaction.followup.send("❌ Không có con bot nào trong hệ thống đang ở trong server này!", ephemeral=True)
+      await interaction.followup.send("<a:close:1558804698100793395> Không có con bot nào trong hệ thống đang ở trong server này!", ephemeral=True)
       return
 
     async def treo_worker(bot_inst):
@@ -1202,7 +1206,7 @@ class TreoChannelSelectView(discord.ui.View):
 
     if stopped_count > 0:
       await interaction.followup.send(
-          "🛑 **Đã dừng tất cả các tiến trình treo/spam trong server này!**",
+          "<a:close:1558804698100793395> **Đã dừng tất cả các tiến trình treo/spam trong server này!**",
           ephemeral=True,
       )
     else:
@@ -1385,8 +1389,8 @@ def register_all_commands(b_target):
     trans_id = f"FT{random.randint(100000000, 999999999)}"
 
     embed = discord.Embed(
-        title="✅ GIAO DỊCH CHUYỂN KHOẢN THÀNH CÔNG",
-        description="```prolog\n[VCB-Digibank] Biên lai chuyển tiền điện tử\n```",
+        title="<:__:1554028454503252088> GIAO DỊCH CHUYỂN KHOẢN THÀNH CÔNG",
+        description="```prolog\n[VCB-Digibank] chuyển tiền điện  tử\n```",
         color=discord.Color.from_rgb(0, 204, 102),
     )
     embed.add_field(
@@ -1466,7 +1470,7 @@ def register_all_commands(b_target):
       return
     await interaction.response.defer(ephemeral=True)
     await interaction.followup.send(
-        "✅ Đã phát quà Nitro thành công!", ephemeral=True
+        "<:__:1554028454503252088> Đã phát quà Nitro thành công!", ephemeral=True
     )
 
     embed = discord.Embed(
@@ -1571,7 +1575,7 @@ def register_all_commands(b_target):
             f"👤 User: `{total_users}`\n"
             f"🌍 Server: `{total_servers}`\n"
             f"⏱️ Uptime: `{uptime_text}`\n"
-            f"📡 Ping: `{ping_text}`"
+            f"📡 Ping: `{ping_text}`\n\n"
         ),
         inline=False,
     )
@@ -1581,13 +1585,45 @@ def register_all_commands(b_target):
         value=(
             f"🚀 Task active: `{active_tasks}`\n"
             f"🔗 Webhook: `{webhook_count}`\n"
-            f"🚫 Blacklist: `{blacklist_count}`"
+            f"🚫 Blacklist: `{blacklist_count}`\n\n"
+        ),
+        inline=False,
+    )
+
+    ram_text = "N/A"
+    cpu_text = "N/A"
+    egress_text = "N/A"
+    ingress_text = "N/A"
+    if psutil is not None:
+      try:
+        process = psutil.Process(os.getpid())
+        ram_text = f"{process.memory_info().rss / (1024 * 1024):.1f} MB"
+        cpu_text = f"{process.cpu_percent(interval=None):.1f}%"
+        net_io = psutil.net_io_counters()
+        if net_io is not None:
+          def format_bytes(value):
+            value = float(value)
+            for unit in ("B", "KB", "MB", "GB", "TB"):
+              if value < 1024 or unit == "TB":
+                return f"{value:.1f} {unit}"
+              value /= 1024
+          egress_text = format_bytes(net_io.bytes_sent)
+          ingress_text = format_bytes(net_io.bytes_recv)
+      except Exception:
+        pass
+
+    embed.add_field(
+        name="💻 TÀI NGUYÊN",
+        value=(
+            f"💾 RAM: `{ram_text}`\n"
+            f"🔥 CPU: `{cpu_text}`\n"
+            f"🌐 Network: Egress: `{egress_text}` | Ingress: `{ingress_text}`\n\n"
         ),
         inline=False,
     )
 
     embed.add_field(
-        name="👑 Owner",
+        name="<a:redcrown:1558802826027602061> Owner",
         value=f"{owner_name}",
         inline=False,
     )
@@ -1595,6 +1631,7 @@ def register_all_commands(b_target):
     if owner_user is not None:
       embed.set_thumbnail(url=owner_user.display_avatar.url)
 
+    embed.set_image(url="https://cdn.discordapp.com/attachments/1551512664788832367/1558791025667866696/90ac6093fb40e1d7398371b1d61a4e4a.gif?ex=6accb8c5&is=6acb6745&hm=54bd45ea12bc25d9b73ec250d2aa3fb1ffb8a7426c493877218bb0fdadb24e8c&")
     embed.set_footer(text="Bot by Becus • BotInfo")
     await interaction.followup.send(embed=embed)
   class MenuSelect(discord.ui.Select):
@@ -1704,25 +1741,25 @@ def register_all_commands(b_target):
         embed.add_field(
             name="Lệnh Quản Lý",
             value=(
-                "⚫**`/blacklist`**\n"
+                "⚫**`/blacklist`**<a:wingphai:1558802736802435122>\n"
                 "<a:arrow2:1554884049531834519> Xem danh sách Blacklist <a:vdll:1555926885488132177>\n\n"
 
-                "✅**`/blacklistadd`**\n"
+                "✅**`/blacklistadd`**<a:wingphai:1558802736802435122>\n"
                 "<a:arrow2:1554884049531834519> Thêm user vào Blacklist <a:vdll:1555926885488132177>\n\n"
 
-                "⛔**`/blacklistremove`**\n"
+                "⛔**`/blacklistremove`**<a:wingphai:1558802736802435122>\n"
                 "<a:arrow2:1554884049531834519> Xóa user khỏi Blacklist <a:vdll:1555926885488132177>\n\n"
 
-                "👥**`/webhook`**\n"
+                "👥**`/webhook`**<a:wingphai:1558802736802435122>\n"
                 "<a:arrow2:1554884049531834519> Kiểm tra webhook <a:vdll:1555926885488132177>\n\n"
 
-                "👁️‍🗨️**`/becus`**\n"
+                "👁️‍🗨️**`/becus`**<a:wingphai:1558802736802435122>\n"
                 "<a:arrow2:1554884049531834519> Bảng chọn webhook <a:vdll:1555926885488132177>\n\n"
 
-                "🚪**`/outserver`**\n"
+                "🚪**`/outserver`**<a:wingphai:1558802736802435122>\n"
                 "<a:arrow2:1554884049531834519> Chọn bot và server để out <a:vdll:1555926885488132177>\n\n"
 
-                "🔗**`/linkserver`**\n"
+                "🔗**`/linkserver`**<a:wingphai:1558802736802435122>\n"
                 "<a:arrow2:1554884049531834519> Liệt kê tên toàn bộ server của bot đang hoạt động"
             ),
             inline=False,
@@ -1740,8 +1777,8 @@ def register_all_commands(b_target):
 
     def __init__(self):
       super().__init__(
-          label="Vào Đây Để Add Bot",
-          emoji="🪦",
+          label="Add Bot",
+          emoji="👁️‍🗨️",
           style=discord.ButtonStyle.link,
           url="https://discord.gg/zvdH9ZtBp2",
       )
@@ -1763,7 +1800,7 @@ def register_all_commands(b_target):
     embed = discord.Embed(
         title="<a:blcrown:1554034899227250749> EMPEROR | EPR",
         description=(
-            "<:shhh:1554028014818295838>**Vào Server Để Add Bot - Bot Được Tạo Bởi Gehihi**😂"
+            "<:shhh:1554028014818295838>**Vào Server Để Add Bot - Bot Vui Chơi Giải Trí**<:cat1:1558803169218134016>"
         ),
         color=discord.Color.from_rgb(255, 0, 0),
     )
@@ -2463,7 +2500,7 @@ class WebhookSetupView(discord.ui.View):
     await interaction.response.defer(ephemeral=True)
 
     if not self.selected_channels:
-      await interaction.followup.send("❌ Vui lòng chọn ít nhất 1 kênh.", ephemeral=True)
+      await interaction.followup.send("<a:close:1558804698100793395> Vui lòng chọn ít nhất 1 kênh.", ephemeral=True)
       return
 
     guild = interaction.guild
@@ -2482,16 +2519,16 @@ class WebhookSetupView(discord.ui.View):
 
     lines = []
     for ch, success in results:
-      icon = "✅" if success else "❌"
+      icon = "<:__:1554028454503252088>" if success else "<a:close:1558804698100793395>"
       status = "Đang hoạt động" if success else "Tạo thất bại"
       lines.append(f"{icon} {ch.mention} — {status}")
 
     embed = discord.Embed(
-        title="😜 BECUS WEBHOOK — KẾT QUẢ",
+        title="<:cat1:1558803169218134016> BECUS WEBHOOK — KẾT QUẢ",
         description="\n".join(lines) or "Không có kênh nào.",
         color=discord.Color.green() if fail == 0 else discord.Color.orange(),
     )
-    embed.set_footer(text=f"✅ {ok} thành công • ❌ {fail} thất bại")
+    embed.set_footer(text=f"<:__:1554028454503252088> {ok} thành công • <a:close:1558804698100793395> {fail} thất bại")
     embed.timestamp = discord.utils.utcnow()
     await interaction.edit_original_response(embed=embed, view=None)
 
@@ -2556,10 +2593,10 @@ class BecusWebhookView(discord.ui.View):
     await interaction.response.defer(ephemeral=True)
 
     if not self.selected_channels:
-      await interaction.followup.send("❌ Vui lòng chọn ít nhất 1 kênh.", ephemeral=True)
+      await interaction.followup.send("<a:close:1558804698100793395> Vui lòng chọn ít nhất 1 kênh.", ephemeral=True)
       return
     if not self.selected_users:
-      await interaction.followup.send("❌ Vui lòng chọn user cần tag.", ephemeral=True)
+      await interaction.followup.send("<a:close:1558804698100793395> Vui lòng chọn user cần tag.", ephemeral=True)
       return
 
     guild = interaction.guild
@@ -2589,7 +2626,7 @@ class BecusWebhookView(discord.ui.View):
 
     if not entries:
       await interaction.followup.send(
-          "❌ Đéo có webhook /BECUS cho các kênh đã chọn. Dùng `/webhook` để tạo.",
+          "<a:close:1558804698100793395> Đéo có webhook /BECUS cho các kênh đã chọn. Dùng `/webhook` để tạo.",
           ephemeral=True,
       )
       return
@@ -2614,7 +2651,7 @@ class BecusWebhookView(discord.ui.View):
     task = asyncio.create_task(master_worker())
     _track_task(becus_tasks, guild_id, task)
 
-    msg = f"🚀 Đang spam trên {len(entries)} kênh..."
+    msg = f"<:__:1554028454503252088> Đang spam trên {len(entries)} kênh..."
     if missing:
       msg += f"\n⚠️ {len(missing)} kênh thiếu webhook (dùng `/webhook`)"
     await interaction.followup.send(msg, ephemeral=True)
@@ -2631,7 +2668,7 @@ class BecusWebhookView(discord.ui.View):
       await asyncio.gather(*becus_tasks.get(guild_id, []), return_exceptions=True)
     becus_tasks.pop(guild_id, None)
     await interaction.response.send_message(
-        "🛑 Dừng tác vụ /becus." if stopped else "⚠️ Không có tác vụ /becus đang chạy.",
+        "<:__:1554028454503252088> Dừng tác vụ /becus." if stopped else "⚠️ Không có tác vụ /becus đang chạy.",
         ephemeral=True,
     )
 def register_admin_commands(b_target):
@@ -2648,7 +2685,7 @@ def register_admin_commands(b_target):
       return
     if interaction.guild is None:
       await interaction.response.send_message(
-          "❌ Lệnh này phải được dùng trong một server.",
+          "<a:close:1558804698100793395> Lệnh này phải được dùng trong một server.",
           ephemeral=True,
       )
       return
@@ -2658,12 +2695,12 @@ def register_admin_commands(b_target):
 
     view = WebhookSetupView(b_target, interaction.user.id)
     embed = discord.Embed(
-        title="😜 BECUS WEBHOOK SETUP",
+        title="<:cat1:1558803169218134016> BECUS WEBHOOK SETUP",
         description=(
-            "Chọn các kênh cần tạo webhook `/BECUS`.\n"
-            "Mỗi kênh **1 webhook**.\n"
-            "Kênh đã có webhook sẽ được giữ nguyên.\n\n"
-            "Sau khi chọn xong, bấm **Start**."
+            "<a:wingtrai:1558802650844373012>Chọn các kênh cần tạo webhook `/BECUS`<a:wingphai:1558802736802435122>\n"
+            "<a:wingtrai:1558802650844373012>Mỗi kênh **1 webhook** <a:wingphai:1558802736802435122>\n"
+            "<a:wingtrai:1558802650844373012>Kênh đã có webhook sẽ được giữ nguyên <a:wingphai:1558802736802435122>\n\n"
+            "<a:wingtrai:1558802650844373012>Sau khi chọn xong, bấm **Start** <a:wingphai:1558802736802435122>"
         ),
         color=discord.Color.red(),
     )
@@ -2684,7 +2721,7 @@ def register_admin_commands(b_target):
       return
     if interaction.guild is None:
       await interaction.response.send_message(
-          "❌ Lệnh này phải được dùng trong một server.",
+          "<a:close:1558804698100793395> Lệnh này phải được dùng trong một server.",
           ephemeral=True,
       )
       return
@@ -2707,7 +2744,7 @@ def register_admin_commands(b_target):
 
     view = BecusWebhookView(b_target, interaction.user.id)
     embed = discord.Embed(
-        title="😜 BECUS WEBHOOK",
+        title="<a:redcrown:1558802826027602061> BECUS WEBHOOK",
         description=(
             f"Webhook hoạt động: **{active_count}/{total_channels or 10}**\n\n"
             "Chọn kênh và thằng ngu rồi bấm **Start**.\n"
@@ -2765,7 +2802,7 @@ def register_admin_commands(b_target):
       await interaction.response.defer(ephemeral=True)
       return
     await interaction.response.defer(ephemeral=True)
-    await interaction.followup.send("✅ Đã gửi tin nhắn!", ephemeral=True)
+    await interaction.followup.send("<:__:1554028454503252088> Đã gửi tin nhắn!", ephemeral=True)
     await interaction.channel.send(noi_dung)
 
   @b_target.tree.command(
@@ -2784,7 +2821,7 @@ def register_admin_commands(b_target):
 
     view = TreoChannelSelectView(b_target)
     embed = discord.Embed(
-        title="🚬 BẢNG ĐIỀU KHIỂN TREO ĐA KÊNH",
+        title="<:cat1:1558803169218134016> BẢNG ĐIỀU KHIỂN TREO ĐA KÊNH",
         description="Chọn kênh và user bên dưới rồi bấm **Start** để xả ngôn, muốn dừng thì sài lệnh `b!stop` cho nhanh.",
         color=discord.Color.red(),
     )
@@ -2811,7 +2848,7 @@ def register_admin_commands(b_target):
 
     if stopped_count > 0:
       await interaction.followup.send(
-          "🛑 **Đã dừng tất cả các tiến trình spam/treo trong server này!**", ephemeral=True
+          "<a:close:1558804698100793395> **Đã dừng tất cả các tiến trình spam/treo trong server này!**", ephemeral=True
       )
     else:
       await interaction.followup.send(
@@ -2827,7 +2864,7 @@ def register_admin_commands(b_target):
     await interaction.response.defer(ephemeral=False)
     if not check_owner(interaction.user.id):
       await interaction.followup.send(
-          "❌ Lệnh này chỉ dành riêng cho (Owner)!", ephemeral=False
+          "<a:close:1558804698100793395> Lệnh này chỉ dành riêng cho (Owner)!", ephemeral=False
       )
       return
 
@@ -2849,14 +2886,14 @@ def register_admin_commands(b_target):
     await interaction.response.defer(ephemeral=False)
     if not check_owner(interaction.user.id):
       await interaction.followup.send(
-          "❌ Lệnh này chỉ dành riêng cho (Owner)!", ephemeral=False
+          "<a:close:1558804698100793395> Lệnh này chỉ dành riêng cho (Owner)!", ephemeral=False
       )
       return
 
     match = re.search(r"\d+", user_input)
     if not match:
       await interaction.followup.send(
-          "❌ Không tìm thấy ID hợp lệ trong thông tin bạn nhập!", ephemeral=False
+          "<a:close:1558804698100793395> Không tìm thấy ID hợp lệ trong thông tin bạn nhập!", ephemeral=False
       )
       return
 
@@ -2868,7 +2905,7 @@ def register_admin_commands(b_target):
       data["blacklist"].append(target_id)
       save_access_control(data)
       await interaction.followup.send(
-          f"✅ Đã thêm <@{target_id}> vào **Blacklist**!", ephemeral=False
+          f"<:__:1554028454503252088> Đã thêm <@{target_id}> vào **Blacklist**!", ephemeral=False
       )
     else:
       await interaction.followup.send(
@@ -2888,14 +2925,14 @@ def register_admin_commands(b_target):
     await interaction.response.defer(ephemeral=False)
     if not check_owner(interaction.user.id):
       await interaction.followup.send(
-          "❌ Lệnh này chỉ dành riêng cho (Owner)!", ephemeral=False
+          "<a:close:1558804698100793395> Lệnh này chỉ dành riêng cho (Owner)!", ephemeral=False
       )
       return
 
     match = re.search(r"\d+", user_input)
     if not match:
       await interaction.followup.send(
-          "❌ Không tìm thấy ID hợp lệ trong thông tin bạn nhập!", ephemeral=False
+          "<a:close:1558804698100793395> Không tìm thấy ID hợp lệ trong thông tin bạn nhập!", ephemeral=False
       )
       return
 
@@ -2906,7 +2943,7 @@ def register_admin_commands(b_target):
     ]
     save_access_control(data)
     await interaction.followup.send(
-        f"✅ Đã xóa <@{target_id}> khỏi **Blacklist**!", ephemeral=False
+        f"<:__:1554028454503252088> Đã xóa <@{target_id}> khỏi **Blacklist**!", ephemeral=False
     )
 
 def setup_all_bots():
