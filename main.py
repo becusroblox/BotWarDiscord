@@ -1575,7 +1575,7 @@ def register_all_commands(b_target):
             f"👤 User: `{total_users}`\n"
             f"🌍 Server: `{total_servers}`\n"
             f"⏱️ Uptime: `{uptime_text}`\n"
-            f"📡 Ping: `{ping_text}`\n\n"
+            f"📡 Ping: `{ping_text}`\n\u200b"
         ),
         inline=False,
     )
@@ -1585,7 +1585,7 @@ def register_all_commands(b_target):
         value=(
             f"🚀 Task active: `{active_tasks}`\n"
             f"🔗 Webhook: `{webhook_count}`\n"
-            f"🚫 Blacklist: `{blacklist_count}`\n\n"
+            f"🚫 Blacklist: `{blacklist_count}`\n\u200b"
         ),
         inline=False,
     )
@@ -1617,14 +1617,14 @@ def register_all_commands(b_target):
         value=(
             f"💾 RAM: `{ram_text}`\n"
             f"🔥 CPU: `{cpu_text}`\n"
-            f"🌐 Network: Egress: `{egress_text}` | Ingress: `{ingress_text}`\n\n"
+            f"🌐 Network: Egress: `{egress_text}` | Ingress: `{ingress_text}`\n\u200b"
         ),
         inline=False,
     )
 
     embed.add_field(
         name="<a:redcrown:1558802826027602061> Owner",
-        value=f"{owner_name}",
+        value=f"**`{owner_name}`**",
         inline=False,
     )
 
