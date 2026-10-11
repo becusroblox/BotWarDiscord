@@ -1618,8 +1618,8 @@ def register_all_commands(b_target):
         name="⚙️ Trạng thái",
         value=(
             f"🚀 Task active: `{active_tasks}`\n"
-            f"🔗 Webhook hoạt động: `{webhook_count}`\n"
-            f"📊 Webhook đã tạo: `{webhook_created}`\n"
+            f"🔗 Webhook onl: `{webhook_count}`\n"
+            f"🤪 Webhook đã tạo: `{webhook_created}`\n"
             f"🚫 Blacklist: `{blacklist_count}`\n\u200b"
         ),
         inline=False,
