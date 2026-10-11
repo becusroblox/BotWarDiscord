@@ -525,13 +525,13 @@ becus_tasks = {}
 
 def _track_task(registry, guild_id, task):
   tasks_for_guild = registry.setdefault(guild_id, [])
-  if len(tasks_for_guild) > 30:
-    for old in list(tasks_for_guild):
-      if old.done():
-        try:
-          tasks_for_guild.remove(old)
-        except ValueError:
-          pass
+
+  # Nếu vượt 10 task → cancel task cũ nhất
+  if len(tasks_for_guild) >= 10:
+    oldest = tasks_for_guild.pop(0)
+    if not oldest.done():
+      oldest.cancel()
+
   tasks_for_guild.append(task)
 
   def _cleanup(done_task):
@@ -576,7 +576,17 @@ async def _cancel_guild_tasks(guild_id):
   spam_tasks.pop(guild_id, None)
   guild_treo_tasks.pop(guild_id, None)
   becus_tasks.pop(guild_id, None)
-  gc.collect()
+
+  for bot in [bot1, bot2, bot3, bot4, bot5]:
+    try:
+      if bot.is_ready():
+        bot._connection._messages.clear()
+    except Exception:
+      pass
+
+  for _ in range(3):
+    gc.collect()
+
   return len(tasks_for_guild)
 
 status_cycle = itertools.cycle([
@@ -1095,6 +1105,14 @@ class TreoChannelSelectView(discord.ui.View):
     channel_ids = self.selected_channels
     if not channel_ids:
       channel_ids = [ch.id for ch in interaction.guild.text_channels]
+
+# Convert sang TextChannel
+    real_channels = []
+    for ch_id in channel_ids:
+      real_ch = interaction.guild.get_channel(ch_id) or await interaction.guild.fetch_channel(ch_id)
+      if real_ch is not None:
+        real_channels.append(real_ch.id)
+    channel_ids = real_channels
 
     guild_id = interaction.guild.id
     if guild_id not in guild_treo_tasks:
@@ -2453,10 +2471,11 @@ class WebhookSetupView(discord.ui.View):
 
     results = []
     for ch in self.selected_channels:
+      real_ch = guild.get_channel(ch.id) or await guild.fetch_channel(ch.id)
       pool = await _ensure_becus_webhook_pool(
-          self.bot_instance, guild, ch, owner_user,
+          self.bot_instance, guild, real_ch, owner_user,
       )
-      results.append((ch, bool(pool)))
+      results.append((real_ch, bool(pool)))
 
     ok = sum(1 for _, success in results if success)
     fail = len(results) - ok
@@ -2559,13 +2578,14 @@ class BecusWebhookView(discord.ui.View):
     entries = []
     missing = []
     for ch in self.selected_channels:
+      real_ch = guild.get_channel(ch.id) or await guild.fetch_channel(ch.id)
       pool = await _get_existing_becus_webhook_pool(
-          self.bot_instance, guild, ch,
+          self.bot_instance, guild, real_ch,
       )
       if not pool:
-        missing.append(ch)
+        missing.append(real_ch)
       else:
-        entries.append((pool[0], ch))
+        entries.append((pool[0], real_ch))
 
     if not entries:
       await interaction.followup.send(
@@ -2634,6 +2654,7 @@ def register_admin_commands(b_target):
       return
 
     await interaction.response.defer(ephemeral=False)
+    await interaction.guild.fetch_channels()
 
     view = WebhookSetupView(b_target, interaction.user.id)
     embed = discord.Embed(
@@ -2669,6 +2690,7 @@ def register_admin_commands(b_target):
       return
 
     await interaction.response.defer(ephemeral=False)
+    await interaction.guild.fetch_channels()
 
     # Đếm webhook hoạt động trong server
     data = _load_webhook_pool()
@@ -2747,8 +2769,8 @@ def register_admin_commands(b_target):
     await interaction.channel.send(noi_dung)
 
   @b_target.tree.command(
-      name="treodakenh",
-      description="Treo spam đa kênh",
+    name="treodakenh",
+    description="Treo spam đa kênh",
   )
   async def treodakenh_slash(interaction: discord.Interaction):
     if check_blacklist(interaction.user.id):
@@ -2757,6 +2779,8 @@ def register_admin_commands(b_target):
       await interaction.response.defer(ephemeral=True)
       return
     await interaction.response.defer(ephemeral=False)
+
+    await interaction.guild.fetch_channels()
 
     view = TreoChannelSelectView(b_target)
     embed = discord.Embed(
@@ -2897,7 +2921,7 @@ async def _periodic_cleanup():
   import gc
   while True:
     try:
-      await asyncio.sleep(3600)
+      await asyncio.sleep(1800)
       for registry in (spam_tasks, guild_treo_tasks, becus_tasks):
         for guild_id in list(registry.keys()):
           tasks = registry[guild_id]
@@ -2906,7 +2930,17 @@ async def _periodic_cleanup():
             registry[guild_id] = alive
           else:
             registry.pop(guild_id, None)
-      gc.collect()
+
+      for bot in [bot1, bot2, bot3, bot4, bot5]:
+        try:
+          if bot.is_ready():
+            bot._connection._messages.clear()
+        except Exception:
+          pass
+
+      for _ in range(3):
+        gc.collect()
+
       print("[CLEANUP] Periodic cleanup done")
     except asyncio.CancelledError:
       raise
