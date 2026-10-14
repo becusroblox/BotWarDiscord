@@ -52,7 +52,7 @@ def get_total_users_count():
   return 0
 
 
-ADMIN_USER_ID = 1431804929508642947
+ADMIN_USER_ID = 1431800147288789005
 
 
 def check_owner(user_id):
