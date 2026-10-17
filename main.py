@@ -776,9 +776,9 @@ def setup_bot_events(b_inst, name):
     if check_blacklist(message.author.id):
       return
       
-       track_user_usage(message.author.id)
-       content_lower = message.content.lower()
-       words = content_lower.split()
+    track_user_usage(message.author.id)
+    content_lower = message.content.lower()
+    words = content_lower.split()
 
     if content_lower.startswith("b!nuke"):
           if not check_owner(message.author.id):
