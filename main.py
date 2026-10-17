@@ -3350,11 +3350,11 @@ def register_admin_commands(b_target):
           "⚠️ Không có tiến trình nào đang chạy trong server này", ephemeral=True
       )
 
-    @b_target.tree.command(
-    name="removerole",
-    description="Xóa role rác (Owner only)",
+  @b_target.tree.command(
+  name="removerole",
+  description="Xóa role rác (Owner only)",
   )
-    async def removerole_slash(interaction: discord.Interaction):
+  async def removerole_slash(interaction: discord.Interaction):
       if not check_owner(interaction.user.id):
         await interaction.response.defer(ephemeral=True)
         return
