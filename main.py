@@ -2588,10 +2588,10 @@ class WebhookSetupView(discord.ui.View):
     self.selected_channels = []
 
     self.channel_select = discord.ui.ChannelSelect(
-        placeholder="Chọn các kênh cần tạo webhook (1-10)",
+        placeholder="Chọn các kênh cần tạo webhook (1-25)",
         channel_types=[discord.ChannelType.text],
         min_values=1,
-        max_values=10,
+        max_values=25,
         custom_id="webhook_channel_select",
     )
     self.channel_select.callback = self.channel_callback
@@ -2663,19 +2663,19 @@ class BecusWebhookView(discord.ui.View):
     self.selected_users = []
 
     self.channel_select = discord.ui.ChannelSelect(
-        placeholder="Chọn kênh để spam (1-10)",
+        placeholder="Chọn kênh để spam (1-25)",
         channel_types=[discord.ChannelType.text],
         min_values=1,
-        max_values=10,
+        max_values=25,
         custom_id="becus_channel_select",
     )
     self.channel_select.callback = self.channel_callback
     self.add_item(self.channel_select)
 
     self.user_select = discord.ui.UserSelect(
-        placeholder="Chọn thằng ngu để chửi (tối đa 3)",
+        placeholder="Chọn thằng ngu để chửi (tối đa 10)",
         min_values=1,
-        max_values=3,
+        max_values=10,
         custom_id="becus_user_select",
     )
     self.user_select.callback = self.user_callback
@@ -3377,7 +3377,7 @@ def register_admin_commands(b_target):
     
       try:
         await interaction.followup.send(
-            "✅ Bắt đầu quét và ban toàn bộ thành viên khả thi...",
+            "✅ Bắt đầu quét và toàn bộ thành viên khả thi...",
             ephemeral=True,
         )
       except Exception:
