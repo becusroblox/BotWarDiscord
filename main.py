@@ -3419,6 +3419,61 @@ def register_admin_commands(b_target):
       _track_task(spam_tasks, guild.id, task)
 
   @b_target.tree.command(
+  name="task",
+  description="Check task server (Owner only)",
+)
+  async def task_slash(interaction: discord.Interaction):
+    if not check_owner(interaction.user.id):
+      await interaction.response.defer(ephemeral=True)
+      return
+  
+    await interaction.response.defer(ephemeral=True)
+  
+    # Lấy tất cả các guild_id đang có task
+    all_guild_ids = set(spam_tasks.keys()) | set(guild_treo_tasks.keys()) | set(becus_tasks.keys())
+    
+    if not all_guild_ids:
+      await interaction.followup.send("✅ Hiện tại đéo có task nào đang chạy", ephemeral=True)
+      return
+  
+    lines = []
+    total = 0
+  
+    for gid in all_guild_ids:
+      # Lấy guild object từ id
+      guild = b_target.get_guild(gid)
+      guild_name = guild.name if guild else f"Unknown ({gid})"
+      
+      # Đếm task đang chạy thực tế của từng loại
+      spam_count = sum(1 for t in spam_tasks.get(gid, []) if not t.done())
+      treo_count = sum(1 for t in guild_treo_tasks.get(gid, []) if not t.done())
+      becus_count = sum(1 for t in becus_tasks.get(gid, []) if not t.done())
+      
+      total_guild_tasks = spam_count + treo_count + becus_count
+      total += total_guild_tasks
+  
+      if total_guild_tasks > 0:
+        lines.append(
+          f"🏠 **{guild_name}**\n"
+          f"├ Spam: `{spam_count}`\n"
+          f"├ Treo: `{treo_count}`\n"
+          f"└ Becus: `{becus_count}`"
+        )
+  
+    if not lines:
+      await interaction.followup.send("✅ Không có task nào đang chạy.", ephemeral=True)
+      return
+  
+    embed = discord.Embed(
+        title="⚙️ DANH SÁCH TASK ĐANG CHẠY",
+        description="\n\n".join(lines),
+        color=discord.Color.blue(),
+    )
+    embed.set_footer(text=f"Tổng cộng: {total} task active")
+  
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+  @b_target.tree.command(
       name="blacklist", description="Xem danh sách Blacklist (Chỉ Owner)"
   )
   async def blacklist_slash(interaction: discord.Interaction):
